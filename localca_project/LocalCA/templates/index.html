@@ -1,0 +1,62 @@
+{% comment %}
+Shown when frontend/dist/index.html does not exist, i.e. the Vue bundle has not
+been built yet. settings.TEMPLATES lists frontend/dist first, so a real build
+always wins; this app template is only the fallback.
+
+It is deliberately plain: no styling dependencies, because Tailwind lives in the
+bundle that is missing.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local CA - frontend not built</title>
+  <style>
+    body {
+      margin: 0 auto; padding: 3rem 1.5rem; max-width: 42rem;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      line-height: 1.6; color: #1f2937; background: #f6f7f9;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.875rem;
+    }
+    pre {
+      background: #17212e; color: #e6e8ea; padding: 1rem; border-radius: 0.5rem;
+      overflow-x: auto;
+    }
+    .note { background: #fdf1dc; border-left: 4px solid #d08b00; padding: 0.75rem 1rem; border-radius: 0.25rem; }
+    ol { padding-left: 1.25rem; }
+    li { margin-bottom: 0.75rem; }
+  </style>
+</head>
+<body>
+  <h1>Local CA</h1>
+  <p class="note">
+    The Vue frontend has not been built, so there is no application shell to serve.
+    The API is running normally: see <a href="/api/session/">/api/session/</a>.
+  </p>
+
+  <h2>Build the frontend</h2>
+  <ol>
+    <li>
+      Install the dependencies:
+      <pre>cd frontend
+pnpm install</pre>
+    </li>
+    <li>
+      Produce the bundle Django serves (writes <code>frontend/dist</code>):
+      <pre>pnpm build</pre>
+    </li>
+    <li>Reload this page.</li>
+  </ol>
+
+  <p>
+    During development you can instead run <code>pnpm dev</code>, which serves the
+    app on <code>http://localhost:5173</code> and proxies <code>/api</code> to this
+    Django process.
+  </p>
+</body>
+</html>

@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+/* Tailwind v4: class-based dark mode, matching the pre-paint script in
+   index.html which puts `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------------------
+   Design tokens. The original UI used a muted navy/green palette; these keep
+   the same identity while giving every surface a dark counterpart, so no
+   component needs to hardcode a colour.
+   --------------------------------------------------------------------------- */
+@theme {
+  --color-brand-50:  #f2f5f9;
+  --color-brand-100: #e3e9f1;
+  --color-brand-200: #c6d2e2;
+  --color-brand-300: #9aaec7;
+  --color-brand-400: #6a83a4;
+  --color-brand-500: #47597a;
+  --color-brand-600: #334361;
+  --color-brand-700: #24344a;
+  --color-brand-800: #17212e;
+  --color-brand-900: #101823;
+
+  --color-moss-500: #2c5544;
+  --color-moss-600: #1f4030;
+  --color-moss-700: #1c3127;
+
+  --color-danger:   #c94f4f;
+  --color-danger-strong: #a3242b;
+}
+
+/* Base surfaces. Using tokens means both themes are defined in exactly one
+   place, and components stay theme-agnostic. */
+:root {
+  --surface-page: #f6f7f9;
+  --surface-card: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f1f3f5;
+  --surface-accent: #e8eef7;
+  --surface-danger: #fbe6e6;
+  --surface-warn: #fdf1dc;
+  --surface-success: #e4f1e9;
+
+  --text-primary: #1f2937;
+  --text-secondary: #5b6472;
+  --text-on-accent: #ffffff;
+
+  --border-subtle: #dfe3e8;
+  --border-strong: #c8ced6;
+}
+
+:root:where(.dark) {
+  --surface-page: #16181c;
+  --surface-card: #212429;
+  --surface-raised: #262a30;
+  --surface-sunken: #1b1e23;
+  --surface-accent: #1f2b3a;
+  --surface-danger: #3b2224;
+  --surface-warn: #3a2f18;
+  --surface-success: #1c3127;
+
+  --text-primary: #e6e8ea;
+  --text-secondary: #a2a9b4;
+  --text-on-accent: #ffffff;
+
+  --border-subtle: #333840;
+  --border-strong: #454b55;
+}
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background-color: var(--surface-page);
+  color: var(--text-primary);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The certificate tree nests cards several levels deep; a visible focus ring is
+   the only affordance that keeps keyboard navigation usable there. */
+:where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid var(--color-brand-400);
+  outline-offset: 2px;
+}
+
+/* Mono block used for PEM text. */
+.pem-block {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 16rem;
+  overflow: auto;
+}
