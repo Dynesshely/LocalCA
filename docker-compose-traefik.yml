@@ -22,6 +22,14 @@ services:
       - static_volume:/app/staticfiles
     environment:
       - TZ=UTC
+      # Required: LocalCA refuses to start without a secret key.
+      # Generate one with:
+      #   python3 -c "import secrets; print(secrets.token_urlsafe(50))"
+      # Put it in a .env file next to this compose file (see .env.example).
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env}
+      # Hostnames this deployment is served under (comma separated).
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-127.0.0.1,localhost}
+      - DJANGO_DEBUG=false
       # IMPORTANT: Set URL_PREFIX to the path prefix you want to use
       # Use URL_PREFIX instead of SCRIPT_NAME to avoid WSGI conflicts when
       # Traefik strips the prefix before forwarding requests

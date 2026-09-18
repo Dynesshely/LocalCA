@@ -1,13 +1,29 @@
+# The frontend is built in its own Docker stage, so its dependencies must not
+# bloat the build context; the sources are copied explicitly there.
+frontend/node_modules
+frontend/dist
+
 venv/
-.venv
-**/staticfiles
+.venv/
+.scratch/
+.audit-venv/
+
+# The SQLite database is deployment state, never an image layer.
 db.sqlite3
 **/db.sqlite3
+db/
+**/db/
+
+**/staticfiles
 __pycache__
-migrations/
+**/__pycache__
+*.pyc
+
+# NOTE: migrations/ must NOT be excluded -- they are committed and are the
+# schema contract the container applies with `manage.py migrate`.
+
 ENV
 .env
 *.log
 .cache
-*.pyc
-
+.git

@@ -1,8 +1,10 @@
 #!/bin/sh
+set -e
 
-# Run Django commands
-python manage.py makemigrations LocalCA
-python manage.py migrate
+# Migrations are committed to the repository, so the container only applies
+# them. Running makemigrations here used to generate schema changes at startup,
+# which cannot be reviewed and races when more than one replica starts.
+python manage.py migrate --noinput
 python manage.py initadmin
 python manage.py collectstatic --noinput
 
