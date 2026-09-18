@@ -1,25 +1,25 @@
 """
-URL configuration for localca_project project.
+Root URL configuration.
 
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/5.1/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
+Django serves the JSON API under /api/ and the built Vue single-page app for
+everything else. The application templates were removed when the frontend moved
+to Vue 3; only Django's own admin still uses templates.
 """
 from django.contrib import admin
-from django.urls import path, include
-from LocalCA import views
+from django.urls import include, path
+
+from LocalCA.api import spa_index
 
 urlpatterns = [
-    path('', include('LocalCA.urls')),
+    path('api/', include('LocalCA.api_urls')),
+
+    # Django's admin is independent of the app UI and keeps its own login page.
     path('admin/', admin.site.urls),
-    path('change-password/', views.change_password, name='change_password'),
+]
+
+# Single-page app shell. The catch-all lets the client router handle deep links
+# such as /create/leaf; it is listed last so it cannot shadow /api/ or /admin/.
+urlpatterns += [
+    path('', spa_index, name='spa-root'),
+    path('<path:resource>', spa_index, name='spa'),
 ]
