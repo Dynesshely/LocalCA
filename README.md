@@ -121,7 +121,68 @@ The public and private keys are stored in the unencrypted db.sqlite3 database fi
 
 Since the private keys are not encrypted, I only recommend hosting this internally, not on production or exposed to internet. 
 
+#### Required configuration
+
+Django refuses to start without a secret key. Copy `.env.example` to `.env`
+next to the compose file you use and set at least:
+
+```bash
+cp .env.example .env
+python3 -c "import secrets; print(secrets.token_urlsafe(50))"   # paste into DJANGO_SECRET_KEY
+```
+
+- `DJANGO_SECRET_KEY` — required, must stay secret and must not be committed.
+- `DJANGO_ALLOWED_HOSTS` — the hostnames/IPs you reach LocalCA under.
+- `DJANGO_DEBUG` — leave `false`. With debugging on, any unhandled error renders
+  a page that includes the secret key, settings and local variables.
+- `DJANGO_SECURE_COOKIES=true` — enable once served over HTTPS; this turns on
+  secure cookies, HSTS and an HTTP-to-HTTPS redirect.
+
+#### Certificate revocation
+
+Certificates can be revoked from the UI (leaf, intermediate and root). The
+revocation is recorded here with an RFC 5280 reason code and an audit entry, so
+"revoked" in this app means "recorded and no longer offered for download" — it
+is **not** published to clients. LocalCA does not yet serve a CRL or an OCSP
+responder, so a certificate that was already installed keeps working until it
+expires or you remove it from the trusting system. The confirmation dialog says
+this explicitly before you revoke.
+
+#### Deleting certificates
+
+Deleting removes the private key material from the database and cannot be
+undone. Deleting a root or intermediate also deletes everything it signed; the
+UI warns with the exact count first. Owners may manage their own certificates,
+and staff users may manage any certificate.
+
+## Architecture
+
+LocalCA is split into a JSON API and a single-page frontend:
+
+```
+localca_project/          Django: JSON API, ORM, auth, certificate operations
+  LocalCA/
+    api.py                API endpoints (session/CSRF auth, JSON in/out)
+    serializers.py        Certificate -> JSON, including per-user rights
+    ca.py                 Certificate generation (cryptography, no openssl shell-out)
+    forms.py              Server-side validation for every certificate input
+    models.py             Roots, intermediates, leaves, revocations, audit log
+frontend/                 Vue 3 SPA (Vite + Tailwind CSS 4)
+  src/
+    api/                  Typed API client, CSRF handling, downloads
+    stores/               Pinia: session, certificates, feedback messages
+    views/                One component per page
+    components/           Shell, certificate tree, dialogs, form controls
+```
+
+Django renders no application pages. It authenticates (session cookie plus CSRF
+token), serves the API under `/api/`, and serves the built SPA for every other
+path so client-side deep links such as `/create/leaf` work.
+
 ### Development steps
+
+Backend:
+
 ```bash
 git clone https://github.com/tgangte/LocalCA.git
 cd LocalCA
@@ -130,10 +191,33 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 cd localca_project
-export CSRF_TRUSTED_ORIGINS="http://localhost"
-python manage.py makemigrations LocalCA
+export CSRF_TRUSTED_ORIGINS="http://localhost:5173"
+export DJANGO_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
+export DJANGO_DEBUG=true
+export DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
+
+# Migrations are committed, so apply them rather than regenerating.
 python manage.py migrate
-python manage.py initadmin
-python manage.py runserver
+python manage.py runserver 8000
 ```
+
+Frontend, in a second terminal. Vite proxies `/api` to Django, so the SPA and
+the API share an origin and session/CSRF behave exactly as in production:
+
+```bash
+cd frontend
+pnpm install
+pnpm dev            # http://localhost:5173, proxies /api to :8000
+```
+
+To build the bundle that Django serves, run `pnpm build` from `frontend/`: it
+writes `frontend/dist`, which `settings.py` picks up automatically. Without a
+build, `/` returns a short placeholder page explaining how to make one.
+
+Run the test suite (it does not need a real key):
+
+```bash
+DJANGO_TESTING=true python manage.py test LocalCA
+```
+
 Build and deploy locally with the above instructions. LocalCA is under active development and contributions are welcome!
