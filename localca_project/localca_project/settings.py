@@ -13,20 +13,69 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 from pathlib import Path
 import os
 
+from django.core.exceptions import ImproperlyConfigured
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
+# BASE_DIR is the localca_project/ package directory, which is what manage.py,
+# the SQLite path and the WSGI module are relative to.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# The Vue frontend lives beside localca_project/, not inside it, so it needs its
+# own root. settings.py is at <repo>/localca_project/localca_project/settings.py.
+FRONTEND_DIR = BASE_DIR.parent / 'frontend'
+FRONTEND_DIST = FRONTEND_DIR / 'dist'
 
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-fv8kbc!hy8v%p1zrryzf*%+0-pytkxfezh2d=uz@*y(550oea1'
+
+def _env_bool(name, default=False):
+    '''Read a boolean environment variable.'''
+    return os.environ.get(name, str(default)).strip().lower() in (
+        '1', 'true', 'yes', 'on')
+
+
+#: Running the test suite. This is a narrower switch than DEBUG: it only
+#: supplies a throwaway key and relaxes host validation for the Django test
+#: client, and is set by CI (see .github/workflows/django.yml).
+TESTING = _env_bool('DJANGO_TESTING')
+
+# SECURITY WARNING: keep the secret key used in production secret!
+#
+# There is deliberately no usable default. The value below is a published
+# constant, so it is only ever installed while running tests, where the
+# database is a throwaway and no real certificate is issued.
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    if TESTING:
+        SECRET_KEY = 'django-insecure-testing-only-not-a-real-key'
+    else:
+        raise ImproperlyConfigured(
+            'DJANGO_SECRET_KEY is not set. LocalCA refuses to start without '
+            'it. Generate one and export it, e.g.:\n'
+            '  export DJANGO_SECRET_KEY=$(python3 -c "import secrets; '
+            'print(secrets.token_urlsafe(50))")\n'
+            'See .env.example for the docker deployment.'
+        )
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# With DEBUG on, an unhandled exception renders a page containing this secret
+# key, the settings module and local variables.
+DEBUG = _env_bool('DJANGO_DEBUG') or TESTING
 
-ALLOWED_HOSTS = ['*']
+# Hosts are explicit. '*' is only tolerated together with DEBUG, because a
+# wildcard otherwise disables Django's Host header validation.
+_hosts = [h.strip() for h in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',')
+          if h.strip()]
+ALLOWED_HOSTS = _hosts or (['*'] if DEBUG else [])
+if TESTING and not _hosts:
+    ALLOWED_HOSTS = ['testserver', 'localhost']
+if not DEBUG and not ALLOWED_HOSTS:
+    raise ImproperlyConfigured(
+        'DJANGO_ALLOWED_HOSTS must list the hostnames this deployment is '
+        'served under when DEBUG is off (comma separated).')
 
 
 # Application definition
@@ -56,7 +105,9 @@ ROOT_URLCONF = 'localca_project.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [os.path.join(BASE_DIR, 'LocalCA', 'templates')],
+        # Only the built Vue shell (index.html) lives here now: Django renders
+        # no application pages. APP_DIRS stays on for Django's own admin.
+        'DIRS': [str(FRONTEND_DIST)],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -130,9 +181,13 @@ else:
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
 
-# Add this since we have additional static files in our apps
+# The Vue build output lives in frontend/dist: index.html is served as the SPA
+# shell, and dist/assets holds the hashed-free bundle. `npm run build` (or
+# `pnpm build`) regenerates both.
+# The dist root (not dist/assets): the static finder maps a requested path onto
+# this directory, so pointing at assets/ would look for assets/assets/app.js.
 STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'LocalCA', 'static'),
+    FRONTEND_DIST,
 ]
 
 
@@ -142,8 +197,32 @@ STATICFILES_DIRS = [
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Authentication settings
-LOGIN_REDIRECT_URL = 'homepage'  # Where to redirect after successful login
-LOGOUT_REDIRECT_URL = 'homepage'  # Where to redirect after logout
-LOGIN_URL = 'login'  # Where to redirect if login is required
+# The app UI is a Vue SPA served at '/', so Django's own auth redirects (used
+# only by the admin) point at the admin login, which still exists.
+LOGIN_REDIRECT_URL = '/admin/'
+LOGOUT_REDIRECT_URL = '/'
+LOGIN_URL = '/admin/login/'
+
 csrf_env = os.environ.get('CSRF_TRUSTED_ORIGINS')
-CSRF_TRUSTED_ORIGINS = csrf_env.split(",") if csrf_env else []
+CSRF_TRUSTED_ORIGINS = [o.strip() for o in csrf_env.split(",") if o.strip()] if csrf_env else []
+
+# The Vue frontend is served from the same origin as the API, so it authenticates
+# with the session cookie and sends the CSRF token back in the X-CSRFToken
+# header. The CSRF cookie must therefore stay readable from JavaScript (Django's
+# default); it is not marked HttpOnly, and that is intentional. The session
+# cookie, which is the actual credential, stays HttpOnly.
+CSRF_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SAMESITE = 'Lax'
+
+# Transport / cookie hardening. These are no-ops while the app is served over
+# plain HTTP (the default docker deployment), but they take effect as soon as
+# DJANGO_SECURE_COOKIES is enabled behind HTTPS, and they keep a misconfigured
+# deployment from silently running with insecure cookies.
+if _env_bool('DJANGO_SECURE_COOKIES'):
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = _env_bool('DJANGO_SECURE_SSL_REDIRECT', True)
+    SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_HSTS_SECONDS', 31536000))
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

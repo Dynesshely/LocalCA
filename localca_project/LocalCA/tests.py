@@ -454,16 +454,38 @@ class ReverseProxyConfigurationTests(TestCase):
         # Just verify it's not empty
         self.assertTrue(len(settings.TIME_ZONE) > 0)
 
-    def test_url_patterns_exist(self):
-        """Test that all expected URL patterns are defined"""
-        # These URLs should always be resolvable regardless of SCRIPT_NAME
-        # This ensures our URL configuration is correct
+    def test_api_url_patterns_exist(self):
+        """Every API route the SPA calls must resolve."""
         from django.urls.exceptions import NoReverseMatch
-        try:
-            reverse('homepage')
-            reverse('create_ca')
-            reverse('create_leaf')
-            reverse('login')
-            reverse('logout')
-        except NoReverseMatch as exc:
-            self.fail(f"URL pattern resolution failed: {exc}")
+
+        cases = {
+            'api:session': [],
+            'api:login': [],
+            'api:logout': [],
+            'api:change_password': [],
+            'api:meta': [],
+            'api:certificates': [],
+            'api:my_certificates': [],
+            'api:issuers': [],
+            'api:create_certificate': ['leaf'],
+            'api:revoke_certificate': ['leaf', 1],
+            'api:delete_certificate': ['leaf', 1],
+            'api:download_pem': ['12345'],
+            'api:download_private': ['12345'],
+            'api:download_pkcs12': ['12345'],
+            'api:audit_log': [],
+        }
+        for name, args in cases.items():
+            try:
+                reverse(name, args=args)
+            except NoReverseMatch as exc:
+                self.fail(f"API URL {name} failed to resolve: {exc}")
+
+    def test_spa_shell_routes_exist(self):
+        """Deep links must resolve to the SPA shell."""
+        from django.urls.exceptions import NoReverseMatch
+        for name in ('spa-root', 'spa'):
+            try:
+                reverse(name, args=(['create/leaf'] if name == 'spa' else []))
+            except NoReverseMatch as exc:
+                self.fail(f"SPA route {name} failed to resolve: {exc}")
