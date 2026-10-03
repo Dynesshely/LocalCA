@@ -7,6 +7,27 @@
 
 ---
 
+## 2026-10-03 · 部署时挂载目录的属主
+
+| # | 决策 | 谁定的 | 理由 / 怎么改 |
+| --- | --- | --- | --- |
+| D20 | `start.sh` 在启动 Django 前**预检 `db/`、`db.sqlite3`、`staticfiles/` 是否可写**，不可写就打印路径 + 属主 + 运行 uid 并退出 | agent 默认 | 此前这类故障表现为六十行 Django traceback 被重启策略反复刷屏，而 SQLite 的措辞会把人引偏：**目录**不可写报 `unable to open database file`，**已存在的文件**不可写报 `attempt to write a readonly database`。用户送来的日志正是前者，而 README 旧文把两者都写成后者，属于文档错误。要回退就删掉 `check_writable` 那几处调用 |
+| D21 | **不引入 root 入口脚本**（不采用「root 启动 → chown 挂载点 → su-exec 降权」这一通行做法） | agent 默认 | 那样任何挂载都能开箱即用，代价是容器以 root 启动。对签发私钥的 CA 来说方向反了（Dockerfile 里明确写了不为 root 设计）。宁可要求宿主上执行一次 `chown`。若将来明确要求免配置，再改这条 |
+
+> 四种情形都用 Harbor 上那个 `latest`（`sha256:7cb353a0…`）在本机逐一实测过：
+>
+> | 环境 | 结果 |
+> | --- | --- |
+> | 具名卷（`docker-compose-harbor.yml`），全新 | ✅ 迁移、建库、collectstatic、gunicorn、HTTP 200 全通 |
+> | 绑定挂载 `./db`，宿主目录不存在（docker 建为 root:root 0755） | ❌ `unable to open database file`、容器 restarting、nginx 502 |
+> | 绑定挂载 `./db`，属主是操作者本人（1000:1000） | ❌ 同上 —— 所以问题不是「属主是 root」，而是「属主不是 10001」 |
+> | 绑定挂载 `./db`，`chown -R 10001:10001` | ✅ 全通 |
+>
+> 也就是说：**镜像和具名卷都没问题**，只有「全新环境 + 绑定挂载」这个组合会踩。
+> 预检已用重新构建的镜像复验：失败路径零 traceback，成功路径不受影响。
+
+---
+
 ## 2026-09-28 · 证书导入功能
 
 | # | 决策 | 谁定的 | 理由 / 怎么改 |
@@ -64,3 +85,4 @@
 * D6：要不要原生支持 JKS（需要新增依赖）。
 * D3：无密钥证书是保留（现状）还是收紧为不支持。
 * `rewrap_keys --password` 是否改为从 stdin/环境变量读取（目前会进 shell 历史）。
+* D20 的预检要生效必须**重建并推送新镜像**（现有 `latest` 里没有这段）。要现在推就说一声。

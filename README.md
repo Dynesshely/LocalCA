@@ -128,6 +128,11 @@ printf 'APP_UID=%s\nAPP_GID=%s\n' "$(id -u)" "$(id -g)" >> .env
 # ...or leave APP_UID alone and run: sudo chown 10001:10001 db
 ```
 
+Either way the point is the same: `db` must end up writable by the uid the
+container runs as. If the first start dies with `unable to open database file`,
+that ownership is what is wrong — see
+[3. The container no longer runs as root](#3-the-container-no-longer-runs-as-root).
+
 ### Security
 
 The web login page and passwords are protected by django-admin and hashed respectively. I recommend creating and deploying HTTPS certs for the LocalCA nginx webserver itself. 
@@ -237,10 +242,22 @@ CSS/JS. Your data is not gone, it is simply not mounted.
 
 ### 3. The container no longer runs as root
 
-It runs as uid/gid 10001 by default. A database written by an earlier
-root-running image is owned by root, and a bind-mounted one is usually owned by
-your host account; in either case the new container cannot write it, and startup
-fails with `attempt to write a readonly database`. Pick one:
+It runs as uid/gid 10001 by default, so the database and the collected static
+files have to be **writable by that uid**. A database written by an earlier
+root-running image is owned by root, and a bind-mounted one is owned by your own
+host account; in either case the new container cannot write it.
+
+SQLite's wording for this is worth knowing, because the two cases produce
+different errors and neither one names the real problem:
+
+| What is not writable | What you see |
+| --- | --- |
+| the `db` **directory** (no database file yet) | `unable to open database file` |
+| an existing `db.sqlite3` **file** | `attempt to write a readonly database` |
+
+`start.sh` checks both — and the static directory — before it starts Django, and
+reports the path, its owner and the uid it runs as instead of a traceback. Fix it
+on the host, once:
 
 ```bash
 # a) build the image to run as the volume's owner (best for bind mounts)
@@ -250,6 +267,21 @@ docker build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g) -t localc
 docker volume inspect <project>_db            # find the mountpoint
 docker run --rm -v <project>_db:/db alpine chown -R 10001:10001 /db
 ```
+
+#### A *fresh* deployment on a bind mount needs the directory to exist first
+
+If your compose file bind-mounts `./db` and that directory is not there yet,
+docker creates it for you — as `root`, mode 0755. The container can read it but
+not write in it, and the very first `migrate` fails with `unable to open database
+file`. Create and hand over the directory before the first start:
+
+```bash
+mkdir -p db && sudo chown -R 10001:10001 db
+docker compose up -d
+```
+
+`docker-compose-harbor.yml` sidesteps this entirely by using named volumes, which
+docker initialises from the image and therefore already owns.
 
 ### What happens to your data
 
