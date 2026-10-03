@@ -26,3 +26,7 @@ frontend/dist/
 # Vite cache and local env overrides.
 frontend/.vite/
 frontend/.env.local
+
+# Registry coordinates for scripts/image-push.sh: machine-local, so the
+# repository itself never names an internal registry.
+scripts/harbor.env

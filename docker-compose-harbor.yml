@@ -9,13 +9,17 @@
 #   DJANGO_SECRET_KEY=<paste: python3 -c "import secrets;print(secrets.token_urlsafe(50))">
 #   DJANGO_ALLOWED_HOSTS=localca.lan,192.168.1.10,localhost,127.0.0.1
 #   CSRF_TRUSTED_ORIGINS=http://localca.lan,http://192.168.1.10
+#   # The published image to run, e.g. <registry>/<project>/local-ca. Kept in .env
+#   # rather than here so this file names no particular registry.
+#   LOCALCA_IMAGE=<registry>/<project>/local-ca
+#   # LOCALCA_TAG=latest
 #   # Optional, only used when the database is still empty:
 #   # DJANGO_SUPERUSER_PASSWORD=<the password you want for `admin`>
 #   # TZ=Asia/Shanghai
 #   # HTTP_PORT=80
 #   EOF
 #
-#   docker login registry.services.nimatattic.net
+#   docker login <your registry>
 #   docker compose -f docker-compose-harbor.yml up -d
 #   → http://<server>/            (sign in as `admin`)
 #
@@ -37,7 +41,7 @@
 # ---------------------------------------------------------------------------
 services:
   web:
-    image: registry.services.nimatattic.net/crequency/local-ca:${LOCALCA_TAG:-latest}
+    image: ${LOCALCA_IMAGE:?set LOCALCA_IMAGE (the published image) in .env}:${LOCALCA_TAG:-latest}
     container_name: localca-web
     restart: unless-stopped
     volumes:

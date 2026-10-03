@@ -1,31 +1,42 @@
 #!/usr/bin/env bash
 #
-# 构建并推送 LocalCA 镜像到 Harbor。
+# 构建并推送 LocalCA 镜像到镜像仓库。
 #
 #   scripts/image-push.sh              # 用版本号 + latest 推送
 #   scripts/image-push.sh 2.0.1        # 指定 tag
 #   HARBOR_PROJECT=other scripts/image-push.sh
 #
-# 默认推到 **crequency** 项目：
-#   registry.services.nimatattic.net/crequency/local-ca
+# 要推到哪个仓库由环境给出，脚本里不写死任何内网地址：
+#   HARBOR_HOST     仓库主机，例如 registry.example.net
+#   HARBOR_PROJECT  项目/命名空间，例如 crequency
+# 二者可以写成 scripts/harbor.env（已 gitignore），这样本机直接跑本脚本即可；
+# 显式传入的环境变量优先级更高。
 #
 # 前置：
-#   1. 已登录：docker login registry.services.nimatattic.net
-#   2. 账号对该项目有推送权限（本机 ~/.docker/config.json 里已有登录记录时不必重复登录）
+#   1. 已登录：docker login "$HARBOR_HOST"
+#   2. 账号对该项目有推送权限（~/.docker/config.json 里已有登录记录时不必重复登录）
 #
 # 说明：这个镜像只含**应用**（Django + gunicorn + 构建好的 SPA），它监听 8000，
-# 不提供静态文件；静态文件由同卷的 nginx 提供，所以部署还需要 nginx 镜像
-# （本仓库 Dockerfile.nginx，以 nginx:alpine + nginx.conf 为基础，几十 KB）。
+# 不提供静态文件；静态文件由同卷的 nginx 提供，所以部署还需要 nginx
+# （用 stock nginx:alpine + 本仓库的 nginx.conf，或用 Dockerfile.nginx 自建）。
 # 对外的 80 端口由 nginx 暴露，见 docker-compose-from-registry.yml。
 
 set -euo pipefail
 
-HARBOR_HOST="${HARBOR_HOST:-registry.services.nimatattic.net}"
-HARBOR_PROJECT="${HARBOR_PROJECT:-crequency}"
+cd "$(dirname "$0")/.."
+
+# Machine-local defaults: registry and namespace. Gitignored, so the repository
+# never names an internal registry; an explicit environment variable still wins
+# because harbor.env only fills in what is not already set.
+if [ -f scripts/harbor.env ]; then
+	# shellcheck disable=SC1091
+	. scripts/harbor.env
+fi
+
+HARBOR_HOST="${HARBOR_HOST:?set HARBOR_HOST, or put it in scripts/harbor.env}"
+HARBOR_PROJECT="${HARBOR_PROJECT:?set HARBOR_PROJECT, or put it in scripts/harbor.env}"
 IMAGE_NAME="${IMAGE_NAME:-local-ca}"
 PUSH_LATEST="${PUSH_LATEST:-1}"
-
-cd "$(dirname "$0")/.."
 
 # frontend/package.json 是仓库里唯一的版本号来源；读不到时退回 git 短修订号。
 VERSION="$(node -p "require('./frontend/package.json').version" 2>/dev/null \
