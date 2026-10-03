@@ -54,8 +54,13 @@ WORKDIR /app
 
 # Runtime dependencies only. requirements.txt no longer contains the linters
 # (they live in requirements-dev.txt), so no filtering is needed here.
+#
+# --no-cache-dir matters more than it looks: pip otherwise keeps every downloaded
+# wheel under /root/.cache/pip, which baked ~80 MB into this layer and pushed the
+# image to 327 MB. Nothing in the runtime image needs that cache.
 COPY requirements.txt /app/
-RUN pip install --upgrade pip && pip install -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Application code, including the committed migrations.
 COPY localca_project /app/localca_project/
