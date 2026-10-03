@@ -1,11 +1,36 @@
+# Local build: builds both images from this checkout.
+#
+# Data locations, stated explicitly because they are easy to get wrong:
+#   * The SQLite database is the bind mount ./db -> /app/localca_project/db --
+#     the Django project directory inside the image, which is where settings.py
+#     puts it. It lives in this directory on the host, which is what you must
+#     back up. It is NOT in a named Docker volume.
+#   * Collected static files live in the named volume static_volume.
+#     `web` mounts it at /app/localca_project/staticfiles (STATIC_ROOT) and
+#     nginx mounts the same volume at /app/staticfiles (the path nginx.conf
+#     aliases). This is regenerable, not backup material.
+#   * The image runs unprivileged, so ./db must be writable by APP_UID. Either
+#     build with your own account's ids:
+#         mkdir -p db
+#         printf 'APP_UID=%s\nAPP_GID=%s\n' "$(id -u)" "$(id -g)" >> .env
+#     or hand the directory to the image's default user:
+#         mkdir -p db && sudo chown 10001:10001 db
+#   * Upgrading from the earlier image, which kept everything under /app? The
+#     mount targets and the required environment changed; see
+#     "Upgrading from an earlier version" in README.md.
 services:
   web:
-    build: .
+    build:
+      context: .
+      # Overridden from .env (see above). Changing these is what lets the
+      # container write a database that already belongs to another account.
+      args:
+        APP_UID: ${APP_UID:-10001}
+        APP_GID: ${APP_GID:-10001}
     command: sh start.sh
     volumes:
-      - ./localca_project:/app
-      - static_volume:/app/staticfiles
-      - ./db:/app/db
+      - ./db:/app/localca_project/db
+      - static_volume:/app/localca_project/staticfiles
     environment:
       - TZ=UTC
       # Required: LocalCA refuses to start without a secret key.
@@ -16,6 +41,9 @@ services:
       # Hostnames this deployment is served under (comma separated).
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-127.0.0.1,localhost}
       - DJANGO_DEBUG=false
+      # Optional: the initial superuser's password. If unset, the first start
+      # generates a random one and prints it once to the logs.
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD:-}
       - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://127.0.0.1,http://localhost}
 
   nginx:
@@ -25,14 +53,11 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./localca_project:/app
+      # Only the collected static files: nginx does not need the application
+      # source, and mounting it here would let a compromised nginx write to it.
       - static_volume:/app/staticfiles:ro
     depends_on:
       - web
 
 volumes:
   static_volume:
-  db: 
-
-  #sqlite db will be in /var/lib/docker/volumes/localca_db/_data 
-

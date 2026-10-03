@@ -471,8 +471,12 @@ class ReverseProxyConfigurationTests(TestCase):
             'api:revoke_certificate': ['leaf', 1],
             'api:delete_certificate': ['leaf', 1],
             'api:download_pem': ['12345'],
-            'api:download_private': ['12345'],
             'api:download_pkcs12': ['12345'],
+            'api:vault_status': [],
+            'api:vault_unseal': [],
+            'api:vault_lock': [],
+            'api:vault_rotate': [],
+            'api-not-found': ['nope'],
             'api:audit_log': [],
         }
         for name, args in cases.items():

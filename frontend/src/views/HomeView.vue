@@ -10,14 +10,17 @@ import { useRouter } from 'vue-router'
 import CertificateTree from '@/components/CertificateTree.vue'
 import ConfirmActionDialog from '@/components/ConfirmActionDialog.vue'
 import Pkcs12Dialog from '@/components/Pkcs12Dialog.vue'
+import VaultUnlockDialog from '@/components/VaultUnlockDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
+import { useVaultStore } from '@/stores/vault'
 import { useToastStore } from '@/stores/toasts'
 import { files } from '@/api'
 import { ApiError } from '@/api/client'
 
 const auth = useAuthStore()
 const certificates = useCertificatesStore()
+const vault = useVaultStore()
 const toasts = useToastStore()
 const router = useRouter()
 
@@ -27,6 +30,12 @@ const actionKind = ref('revoke')       // 'revoke' | 'delete'
 const actionOpen = ref(false)
 const p12Target = ref(null)
 const p12Open = ref(false)
+
+// Vault unlock: the server keeps the key in its own memory, so an action that
+// fails with vault_locked is retried after the operator unlocks.
+const unlockOpen = ref(false)
+const unlockReason = ref('')
+let retryAfterUnlock = null
 const query = ref('')
 
 const dialogCertificate = computed(() => {
@@ -67,11 +76,32 @@ const totalCount = computed(() => certificates.flat.length)
 
 onMounted(async () => {
   try {
-    await certificates.load()
+    await Promise.all([certificates.load(), vault.load()])
   } catch (err) {
     toasts.error(`Could not load certificates: ${err.message}`)
   }
 })
+
+/** True when an API error means "unlock the vault and try again". */
+function isVaultLocked(err) {
+  return err instanceof ApiError && err.status === 409 && err.payload?.vault_locked
+}
+
+function askToUnlock(reason, retry) {
+  unlockReason.value = reason
+  retryAfterUnlock = retry || null
+  unlockOpen.value = true
+}
+
+async function onUnlocked() {
+  unlockOpen.value = false
+  await vault.load()
+  const retry = retryAfterUnlock
+  retryAfterUnlock = null
+  if (retry) {
+    await retry()
+  }
+}
 
 function openAction(kind, certificate) {
   if (!auth.isAuthenticated) {
@@ -124,9 +154,6 @@ async function doDownload(kind, certificate) {
   try {
     if (kind === 'public') {
       await files.publicPem(certificate.serial_number, certificate.name)
-    } else if (kind === 'private') {
-      await files.privatePem(certificate.serial_number, certificate.name)
-      toasts.info(`Private key for "${certificate.name}" downloaded.`)
     }
   } catch (err) {
     toasts.error(err instanceof ApiError ? err.message : String(err))
@@ -147,7 +174,15 @@ async function exportPkcs12(password) {
     toasts.success(`PKCS12 bundle for "${target.name}" downloaded.`)
     p12Open.value = false
   } catch (err) {
-    toasts.error(err instanceof ApiError ? err.message : String(err))
+    if (isVaultLocked(err)) {
+      p12Open.value = false
+      askToUnlock(
+        `Unlock to export the private key for "${target.name}".`,
+        () => openPkcs12(target),
+      )
+    } else {
+      toasts.error(err instanceof ApiError ? err.message : String(err))
+    }
   } finally {
     busy.value = false
   }
@@ -215,7 +250,6 @@ async function exportPkcs12(password) {
       v-else
       :tree="filteredTree"
       @download-public="(c) => doDownload('public', c)"
-      @download-private="(c) => doDownload('private', c)"
       @export-pkcs12="openPkcs12"
       @revoke="(c) => openAction('revoke', c)"
       @delete="(c) => openAction('delete', c)"
@@ -236,6 +270,14 @@ async function exportPkcs12(password) {
       :busy="busy"
       @close="p12Open = false"
       @export="exportPkcs12"
+    />
+
+    <VaultUnlockDialog
+      :open="unlockOpen"
+      :busy="busy"
+      :reason="unlockReason"
+      @close="unlockOpen = false"
+      @unlocked="onUnlocked"
     />
   </div>
 </template>

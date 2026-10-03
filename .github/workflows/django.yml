@@ -31,7 +31,10 @@ jobs:
     - name: Install Dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install -r requirements.txt
+        # Runtime plus dev tooling: the test suite itself needs only runtime
+        # dependencies, but installing the same set as CI pylint keeps the
+        # two jobs consistent.
+        pip install -r requirements-dev.txt
     - name: Run Custom Tests
       run: |
         python localca_project/manage.py test

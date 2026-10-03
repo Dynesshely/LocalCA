@@ -22,38 +22,65 @@ RUN pnpm build
 
 # ---------------------------------------------------------------------------
 # Stage 2: the application image.
+#
+# The layout mirrors the repository exactly:
+#
+#     /app/localca_project/...    the Django project  (BASE_DIR)
+#     /app/frontend/dist/...      the compiled SPA
+#
+# Keeping that shape matters: settings.py derives FRONTEND_DIST from
+# BASE_DIR.parent / 'frontend' / 'dist'. A flat layout (app files directly in
+# /app) makes BASE_DIR.parent resolve to '/' instead, the frontend is never
+# found, and the container silently serves the "frontend not built" page.
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim
+
+# The uid/gid the container runs as. Override these when the database is a bind
+# mount owned by a different account -- an upgrade from a root-running image
+# leaves the SQLite file owned by root, and this image will not be able to write
+# to it otherwise:
+#
+#     docker build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g) -t localca .
+#
+# This exists so the image does not have to run as root to work with an existing
+# volume.
+ARG APP_UID=10001
+ARG APP_GID=10001
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
+# Runtime dependencies only. requirements.txt no longer contains the linters
+# (they live in requirements-dev.txt), so no filtering is needed here.
 COPY requirements.txt /app/
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Runtime dependencies only: the linters in requirements.txt are development
-# tools, so they are stripped from the production image.
-RUN pip install --upgrade pip \
-    && grep -vE '^(pylint|autopep8)' requirements.txt > /tmp/runtime.txt \
-    && pip install -r /tmp/runtime.txt \
-    && rm /tmp/runtime.txt
+# Application code, including the committed migrations.
+COPY localca_project /app/localca_project/
 
-# Application code (includes the committed migrations).
-COPY localca_project /app/
-
-# Compiled frontend, laid out exactly where settings.py expects it:
-# FRONTEND_DIST = <repo>/frontend/dist, and BASE_DIR is /app/localca_project.
+# Compiled frontend, at the path settings.FRONTEND_DIST resolves to.
 COPY --from=frontend /frontend/dist /app/frontend/dist
 
-# Run as an unprivileged user; the CA database is the only thing that needs to
-# be writable, and that is mounted as a volume.
-RUN useradd --system --create-home --uid 10001 localca \
-    && mkdir -p /app/db /app/staticfiles \
-    && chown -R localca:localca /app
-USER localca
+# Run as an unprivileged user. The SQLite database and collected static files
+# are the only things that need to be writable.
+#
+# Note the group is created explicitly: `useradd --system` would otherwise put the
+# user in the wheel group, which is wider than intended.
+RUN groupadd --system --gid "${APP_GID}" localca \
+    && useradd --system --uid "${APP_UID}" --gid "${APP_GID}" \
+       --create-home --home-dir /home/localca localca \
+    && mkdir -p /app/localca_project/db /app/localca_project/staticfiles /home/localca \
+    && chown -R "${APP_UID}:${APP_GID}" /app /home/localca
+USER ${APP_UID}:${APP_GID}
+
+# Run from the Django project directory: this is where manage.py and start.sh
+# live, and it keeps the layout the same as the repository.
+WORKDIR /app/localca_project
 
 EXPOSE 8000
 
-# Start the server; docker-compose overrides this with start.sh.
-# RUN python manage.py runserver 0.0.0.0:8000
+# Migrate, collect static, then serve through gunicorn. docker-compose may
+# override this, and a bare `docker run` still gets a working container.
+CMD ["sh", "start.sh"]

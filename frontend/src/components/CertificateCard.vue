@@ -11,7 +11,9 @@ const props = defineProps({
   depth: { type: Number, default: 0 },
 })
 
-const emit = defineEmits(['download-public', 'download-private', 'export-pkcs12', 'revoke', 'delete'])
+// No 'download-private' event: there is deliberately no plaintext private
+// key download. Operators export a password-protected PKCS12 bundle instead.
+const emit = defineEmits(['download-public', 'export-pkcs12', 'revoke', 'delete'])
 
 const kindLabel = computed(() => ({
   root: 'Root',
@@ -80,6 +82,13 @@ function formatExpiry() {
           <span v-if="certificate.is_owner" class="rounded bg-white/85 px-2 py-0.5 font-medium text-gray-900">
             Created by you
           </span>
+          <span
+            v-if="certificate.has_key === false"
+            class="rounded bg-slate-500/80 px-2 py-0.5 font-medium text-white"
+            title="This certificate was imported without its private key. It can be listed, revoked and downloaded as PEM, but it cannot sign and no PKCS12 bundle can be produced."
+          >
+            no private key
+          </span>
           <span v-if="!certificate.is_owner && certificate.owner" class="opacity-80">
             owner: {{ certificate.owner }}
           </span>
@@ -97,19 +106,23 @@ function formatExpiry() {
 
         <template v-if="certificate.is_owner">
           <button
-            type="button"
-            class="rounded bg-amber-400/90 px-2.5 py-1 text-xs font-medium text-gray-900 transition hover:bg-amber-300"
-            @click="emit('download-private', certificate)"
-          >
-            Private key
-          </button>
-          <button
+            v-if="certificate.has_key !== false"
             type="button"
             class="rounded bg-sky-500/90 px-2.5 py-1 text-xs font-medium text-white transition hover:bg-sky-400"
+            :title="certificate.protected
+              ? 'Exports a password-protected PKCS12 bundle'
+              : 'This key is not encrypted; export is still password-protected'"
             @click="emit('export-pkcs12', certificate)"
           >
-            PKCS12
+            Export PKCS12
           </button>
+          <span
+            v-if="certificate.has_key !== false && !certificate.protected"
+            class="rounded bg-amber-500/25 px-2 py-0.5 text-xs text-amber-800 dark:text-amber-200"
+            title="This private key predates encryption or has no owner, so it is still stored in cleartext."
+          >
+            key not encrypted
+          </span>
         </template>
 
         <template v-if="certificate.can_manage">

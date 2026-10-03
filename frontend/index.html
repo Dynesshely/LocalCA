@@ -4,6 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light dark" />
+    <!-- Vite rewrites these root-absolute URLs with the configured base, so in the
+         Django deployment they resolve under STATIC_URL. The SVG is preferred;
+         the .ico is there for clients that only ever ask for that name. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="16x16 32x32" />
     <title>Local CA</title>
     <script>
       // Resolve the theme before first paint so the page never flashes the wrong

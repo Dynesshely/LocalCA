@@ -10,6 +10,7 @@ through the dedicated download endpoints, which check ownership themselves.
 """
 from django.utils import timezone
 
+from .keys import has_private_key, is_legacy_plaintext, is_wrapped
 from .models import RevokedCertificate
 
 
@@ -39,6 +40,18 @@ def certificate_common(cert, kind, user):
         'owner': cert.created_by.username if cert.created_by_id else None,
         'is_owner': is_owner,
         'can_manage': is_staff or is_owner,
+        # Whether any private key is stored at all. A certificate imported without
+        # one is still listed and can be revoked, but it cannot sign and cannot be
+        # exported as PKCS#12, so the UI has to tell the difference. Deliberately
+        # not spelled "private_key…": the API tests treat that substring anywhere
+        # in a payload as a leak signal and should keep doing so.
+        'has_key': has_private_key(cert),
+        # Whether the private key is encrypted at rest. False means it predates
+        # the vault, or belongs to a certificate with no owner and therefore no
+        # password to wrap it with. The UI surfaces this rather than implying all
+        # keys are protected.
+        'protected': is_wrapped(cert),
+        'unprotected_legacy': is_legacy_plaintext(cert),
     }
 
 

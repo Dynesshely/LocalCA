@@ -49,9 +49,14 @@ watch(
       if you forget it you will have to export the bundle again.
     </p>
 
+    <p class="mt-2 text-xs" :style="{ color: 'var(--text-secondary)' }">
+      The export password is required: the bundle contains a private key and is
+      never written to disk unencrypted.
+    </p>
+
     <div class="mt-4">
       <label for="p12-password" class="mb-1 block text-sm font-medium">
-        Export password <span :style="{ color: 'var(--text-secondary)' }">(optional)</span>
+        Export password
       </label>
       <div class="flex gap-2">
         <input
@@ -59,7 +64,7 @@ watch(
           v-model="password"
           :type="showPassword ? 'text' : 'password'"
           autocomplete="new-password"
-          placeholder="Leave empty for an unencrypted bundle"
+          placeholder="At least 8 characters"
           data-testid="p12-password"
           class="flex-1 rounded border px-3 py-2 text-sm"
           :style="{ backgroundColor: 'var(--surface-sunken)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }"
@@ -73,8 +78,8 @@ watch(
           {{ showPassword ? 'Hide' : 'Show' }}
         </button>
       </div>
-      <p v-if="!password" class="mt-1 text-xs" :style="{ color: 'var(--text-secondary)' }">
-        With no password the bundle is written unencrypted.
+      <p v-if="password && password.length < 8" class="mt-1 text-xs text-red-600 dark:text-red-400">
+        Use at least 8 characters.
       </p>
     </div>
 
@@ -92,7 +97,7 @@ watch(
         type="button"
         class="rounded px-3 py-2 text-sm font-medium text-white transition disabled:opacity-60"
         :style="{ backgroundColor: 'var(--color-brand-700)' }"
-        :disabled="busy"
+        :disabled="busy || !password || password.length < 8"
         data-testid="p12-export"
         @click="emit('export', password)"
       >

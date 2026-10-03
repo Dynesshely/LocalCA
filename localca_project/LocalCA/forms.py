@@ -11,6 +11,7 @@ from django import forms
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils import timezone
 
+from .keys import issuers_with_key
 from .models import (
     IntermediateCertificate,
     LeafCertificate,
@@ -100,7 +101,7 @@ class IntermediateCertificateForm(CertificateForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['root_id'].queryset = (
-            RootCertificate.objects.filter(created_by=user)
+            issuers_with_key(RootCertificate, user)
             if user is not None else RootCertificate.objects.none()
         )
         self.fields['root_id'].label_from_instance = lambda obj: obj.name
@@ -146,7 +147,7 @@ class LeafCertificateForm(CertificateForm):
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['intermediate_id'].queryset = (
-            IntermediateCertificate.objects.filter(created_by=user)
+            issuers_with_key(IntermediateCertificate, user)
             if user is not None else IntermediateCertificate.objects.none()
         )
         self.fields['intermediate_id'].label_from_instance = lambda obj: obj.name

@@ -578,3 +578,230 @@ python3 -m venv .audit-venv && .audit-venv/bin/pip install Django==5.2.11 crypto
 - `Dockerfile` 改为多阶段：node 阶段 `pnpm install --frozen-lockfile && pnpm build`，
   Python 阶段只装运行时依赖（剔除 pylint/autopep8），并以非 root 用户运行。
 - `Dockerfile` 基础镜像从 Python 3.10 提到 3.12，与 CI 对齐。
+
+---
+
+## 11. 第二轮加固（2026-09-28）
+
+按用户要求处理审计遗留项。本节记录改了什么、如何验证，以及**仍然没有解决的部分**。
+
+### 11.1 私钥静态加密（关闭 P0-3 的根因）
+
+**威胁模型**（必须先说清，否则会高估收益）：防的是「拿到数据库文件或备份的人」——
+`docker cp`、卷快照、误提交、磁盘镜像。**不防**掌握运行中服务器的人（内存里有解封后的
+根密钥）、不防有权限的合法用户、不防知道口令的人。这是静态数据保密，不是入侵防御。
+
+**方案：信封加密 + 每行 AAD**
+
+```
+口令 ──scrypt(N=2^15,r=8,p=1)──► KEK（永不落盘）
+KEK  ──AES-256-GCM───────────► 每用户根密钥（封装后入库）
+根密钥 ──HKDF(kind|id|serial)─► 每张证书的密钥（按需派生，不落盘）
+每张证书的密钥 ──AES-256-GCM(AAD)──► 私钥 PEM
+```
+
+- 用**根密钥**而非直接用口令加密每把私钥：改密码只需重新封装 32 字节，
+  不必重加密全库；将来换 KMS/HSM 也只需接管封装这一步。
+- **AAD 绑定证书身份**：把 A 行的密文粘贴到 B 行，解密会失败而不是静默返回错误的密钥。
+- 原语全部来自既有依赖 `cryptography`（`Scrypt` + `AESGCM` + `HKDF`），**未新增依赖**。
+
+**行为变更（安全降级点，已按最佳实践定）**
+
+- **删除 `/api/download/<serial>/private/`**：明文导出会让静态加密形同虚设
+  （一次点击就把私钥写进浏览器下载目录）。私钥只能以**强制口令的 PKCS12** 导出。
+- 签发（根/中间/叶）现在要求密钥库**已解锁**；未解锁返回 `409 vault_locked`，
+  前端弹出解锁对话框并自动重试。
+
+**诚实的边界**：`vault_status`（API 与 `manage.py vault_status`）会明确列出
+`plaintext`（历史明文密钥）与 `orphaned`（无属主、**永远无法加密**）的数量，
+不会把「部分加密」说成「已加密」。
+
+**命令**：`manage.py rewrap_keys --username <u>` 把历史明文密钥迁入密钥库（幂等、可 dry-run、
+逐条报告失败且不中断）；`manage.py vault_status` 只读盘点。
+
+### 11.2 其余各项
+
+| # | 事项 | 结果 |
+| --- | --- | --- |
+| 3 | 全部改 UTC | `ca.py` 6 处 `utcnow()` → `datetime.now(timezone.utc)`；全仓库已无 naive datetime 调用 |
+| 5 | 登录 API 限速 | 新增 `LocalCA/throttle.py`：按 IP 与按账号各 5 次/15 分钟，超限 429 + `Retry-After`；成功登录清零；失败固定加 300ms 延迟以抹平时序；缓存键有上限且会过期。纯标准库实现，**未新增依赖**。**局限**：基于 locmem，多进程/多副本不共享——已在代码与文档中写明 |
+| 6 | Docker | 修正容器布局（见 11.3）、移除 nginx 的应用源码挂载、拆分 dev 依赖、加 `CMD`；**实际构建并在容器内验证** |
+| 7 | 依赖升级 | `Django 5.2.11→5.2.17`（**留在 5.2 LTS**）、`cryptography 44.0.1→50.0.1`、`gunicorn 23.0.0→26.2.0`、`pylint 3.3.1→4.0.9`；dev 依赖拆到 `requirements-dev.txt`，生产镜像不再安装 linter |
+| 2 | CRL/OCSP | **按用户指示暂不处理** |
+| 4 | KeyUsage / path_length | **按用户指示暂不处理**（无限下签是设计意图） |
+
+### 11.3 Docker 验证中发现并修复的真实缺陷
+
+| 缺陷 | 后果 | 修复 |
+| --- | --- | --- |
+| **容器布局与仓库布局不一致** | `settings.py` 由 `BASE_DIR.parent/'frontend'/'dist'` 推出 `/frontend/dist`，而镜像把应用放在 `/app`，该路径为 `/frontend/dist` 不存在 → **容器只服务「frontend not built」兜底页**，前端完全不可用；同时 `collectstatic` 报警告 | 镜像改为镜像仓库布局（`/app/localca_project` + `/app/frontend/dist`），并在 Dockerfile 中写明原因 |
+| `initadmin` 仍创建 `admin/password` | 每次新部署都有一个公开的弱口令超级用户，且**明文打印进容器日志**；README 还在宣传这个口令 | 无内置口令：优先读 `DJANGO_SUPERUSER_PASSWORD`（不回显），否则随机生成并只打印一次；README 已更正 |
+| `docker-compose.yml` 卷定义自相矛盾 | 同时声明具名卷 `db:` 与绑定挂载 `./db:/app/db`，注释却称数据在具名卷里 | 统一为绑定挂载（与文件其余部分一致），并在所有 compose 文件顶部写明「数据库在哪、怎么备份」 |
+| nginx 挂载了应用源码 | 无必要，且一旦 nginx 被攻陷可写源码 | 只挂载静态文件卷（只读） |
+| `/api/` 未匹配路径回落到 SPA | 客户端拿到 HTML 200，把拼错的端点当成成功 | 新增 JSON 404 兜底（`/api/<path>`） |
+
+### 11.4 验证证据
+
+| 层次 | 命令 | 结果 |
+| --- | --- | --- |
+| Django 测试 | `DJANGO_TESTING=true manage.py test LocalCA` | **113 passed**（新增 `tests_vault.py` 37 项） |
+| 浏览器 E2E | `python .scratch/spa_e2e.py` | **34/34**（含「未解锁时签发会弹解锁框 → 解锁 → 自动重试成功」） |
+| 匿名 E2E | `python .scratch/spa_e2e.py --anonymous` | **8/8** |
+| Docker 构建 | `docker build -t localca-verify .` | 成功（node 构建前端 + python 运行阶段） |
+| 容器运行 | 真实 `docker run` + 绑定挂载库 | SPA 与 API 均正常；`staticfiles` 警告 0；迁移 `0001/0002/0003` 全部应用；`vaultrootkey` 表存在 |
+| 非 root / 依赖裁剪 | 容器内 `id` 与 import 探测 | `uid=10001(localca)`；`pylint`/`autopep8` 均不存在 |
+| 初始口令 | 两种场景各起一个容器 | 未设变量→随机口令且可用它登录、日志无 `Password: password`；设变量→不回显 |
+| cryptography 50 | 真签发 根→中间→叶 + PKCS12 | 链验证通过、SAN 正确、`not_valid_after_utc` 为 aware、`.p12` 内无明文私钥 |
+| pylint 4 | CI 门禁 | 9.39/10（修掉一处真实的参数遮蔽 `W0621`） |
+
+### 11.5 仍然未解决 / 需要你知道的
+
+1. **CRL / OCSP 仍缺**（按你指示）。吊销依旧只在本应用内记录，对已分发证书无密码学效力。
+2. **密钥库的解锁是进程内状态**。多 gunicorn worker 或多副本时，一个 worker 被解锁不会
+   让其他 worker 也解锁（签发请求可能落到未解锁的 worker 并返回 409，前端会再弹一次）；
+   反之亦然。单进程部署不受影响。若要多副本，需要把根密钥交给共享后端（KMS/Redis+封装）。
+3. **忘记口令 = 私钥永久不可恢复**，这是设计选择，没有后门。UI 与 README 都已明示。
+4. **无属主的历史证书私钥无法加密**（没有口令可派生）。`vault_status` 会计入 `orphaned`
+   并提示指派属主或删除；在此之前它们仍是明文。
+5. **前端三个 major 版本未升级**：`vite 7→8`、`vue-router 4→5`、`pinia 3→4`。
+   这些是破坏性迁移，不属于「修复依赖冲突」，本轮刻意留在当前大版本。
+6. **`DJANGO_SUPERUSER_PASSWORD` 未设置时口令会出现在容器日志里一次**。
+   这是首次启动的引导妥协；要避免就显式设置该变量（推荐）。
+
+---
+
+## 12. 第三轮：部署契约回归与旧数据升级复验（2026-09-28）
+
+起因是一个直接提问：**「把新镜像直接替换进旧 compose 文件，能正常运行并读取旧数据吗？」**
+实测答案分四层，其中第 2、3 层是本轮才发现的**真实回归 / 真实破坏**，第 11 轮遗漏了它们。
+
+### 12.1 结论
+
+| 层 | 旧部署只换镜像会怎样 | 处理 |
+| --- | --- | --- |
+| 启动前置 | 缺 `DJANGO_SECRET_KEY` 直接拒启；`DJANGO_DEBUG=false` 时还必须有 `DJANGO_ALLOWED_HOSTS` | 补 `.env`（照 `.env.example`） |
+| **数据/静态卷挂载** | **静默失效**：compose 仍挂 `/app/db`、`/app/staticfiles`，而新镜像的库与静态文件在 `/app/localca_project/` 下。容器照常起来，但**自己新建一个空库**，nginx 的静态目录也是空的（CSS/JS 全 404）。数据没丢，只是没被挂上 | 四个 compose 的 `web` 卷目标改为 `/app/localca_project/db`、`/app/localca_project/staticfiles` |
+| **文件属主** | 旧镜像以 root 运行、库归 root（绑定挂载则归宿主账号），新镜像默认 uid 10001 → 启动即 `attempt to write a readonly database` | ① `docker build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)`；② 或用 root 容器 `chown -R 10001:10001 <卷目录>` |
+| 数据本身 | **兼容**：迁移就地应用，账号/口令/证书/吊销/审计全部保留 | `manage.py rewrap_keys --username <u>` 把旧明文私钥迁入密钥库 |
+
+**回归根因**：第 11 轮为修 `FRONTEND_DIST` 把镜像布局从「扁平 `/app`」改成「镜像仓库布局
+`/app/localca_project`」，但**只改了 Dockerfile，没动任何 compose**；而 11.3/11.4 的容器验证
+用的是显式正确的 `-v …:/app/localca_project/db`，**绕过了 compose 契约**，所以编排文件里的
+旧路径当时没被暴露。教训：改动镜像内路径后必须用**编排文件本身**（而非手写 `docker run`）
+做验收，否则卷映射会静默失配 —— 这类故障不会报错，只会「看起来数据没了」。
+
+### 12.2 复验证据（本轮实跑）
+
+| 验证 | 做法 | 结果 |
+| --- | --- | --- |
+| 默认构建（含 `ARG APP_UID/APP_GID` 新改动） | `docker build -t localca-verify .` | 成功 |
+| uid 可覆盖 | `docker build --build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)` | 成功；容器内 `uid=1000(localca)`、`manage.py` 可读、直接写宿主目录库文件成功 |
+| 镜像内真实路径 | 容器内读 `settings` | `DB=/app/localca_project/db/db.sqlite3`、`STATIC_ROOT=/app/localca_project/staticfiles`；`/app/db` 在镜像里**不存在** |
+| 旧挂载点（回归证据） | `-v <hostdir>:/app/db` + `migrate` | 挂载点为**空**，库落在 `/app/localca_project/db/` → 卷完全没被使用 |
+| 静态卷（同款回归） | `-v <hostdir>:/app/staticfiles` + `collectstatic` | 挂载点 **0** 个文件，`/app/localca_project/staticfiles` **4** 个文件 → nginx alias 到 `/app/staticfiles` 必然 404 |
+| **旧库升级（决定性）** | `08db704` worktree 建旧库 + seed → 新镜像（属主匹配 + 补 `.env` + 修正挂载） | 迁移 `0002`、`0003` **就地应用**；`operator` 账号用**旧口令**经 `/api/login/` 登录成功；根/中间/叶（含 SAN）、吊销（含旧版自由文本理由 `superseded by policy`）、审计 2 条全部保留；`protected=false` 如实标注旧密钥仍为明文 |
+| 旧私钥迁移 | `vault_status` → `rewrap_keys --username operator` | 4 把明文 → 4 把封装，复盘点 `plaintext=0` |
+| **编排文件验收** | `docker compose -p lcatest up -d --build`（修正后的 `docker-compose.yml`，nginx:80） | 全栈起来；`GET /` 200、`/static/assets/app.js` **200 (114KB)**、`app.css` **200 (24KB)**、`/api/session/` 200、`/api/nope` 404（JSON 兜底）、SPA 深链 `/create/leaf` 200；nginx 侧静态卷 **141** 个文件 |
+| 四个 compose 可解析 | `docker compose -f <file> config` | 全部 OK |
+| 后端测试 | `DJANGO_TESTING=true manage.py test LocalCA` | **113 passed** |
+
+### 12.3 本轮改动
+
+| 文件 | 改动 |
+| --- | --- |
+| `Dockerfile` | 新增 `ARG APP_UID/APP_GID`（默认 10001）；`groupadd`/`useradd`/`chown`/`USER` 全部改用它们，使镜像可构建成与既有卷属主一致 |
+| `docker-compose.yml` | `web` 卷改为 `/app/localca_project/{db,staticfiles}`；移除与旧布局绑定的 `./localca_project:/app` 源码覆盖挂载；`build.args` 从 `.env` 注入 `APP_UID/APP_GID` |
+| `docker-compose-from-registry.yml`、`…-arm.yml`、`…-traefik.yml` | `web` 卷目标同步到新路径；顶部注释更正库位置并指向 README 升级章节（nginx 挂载点不变，共享同一个卷） |
+| `README.md` | 新增「Upgrading from an earlier version」：三项破坏性变更、卷改动示例、属主两种解法、数据兼容性、回滚前提 |
+| `.env.example` | 增加 `APP_UID/APP_GID` 说明（仅源码构建使用） |
+
+### 12.4 仍未做的 / 边界
+
+1. **回滚未实测**。迁移只加列/加表，但**没有验证旧镜像能读新 schema**；README 因此要求
+   回滚必须先还原升级前的库备份，而不是承诺向后兼容。升级前请**先复制库文件或卷**。
+2. **`rewrap_keys` 的口令仍是命令行参数**，会进入 shell 历史与进程列表。本轮未改；
+   若要更安全应支持从 stdin/环境变量读取。
+3. **多副本 / 多 worker 下密钥库仍不共享**（见 11.5 第 2 条），与部署路径改动无关。
+4. 本轮**没有**改任何 Python 业务逻辑，除 `rewrap_keys` 输出文案的统计修正（见 12.5）。
+
+### 12.5 顺带修掉的一个真实文案缺陷
+
+`rewrap_keys` 原先输出 `Wrapped 3 key(s); 0 failed; 3 already wrapped.` ——「封装了 3 把」
+与「已有 3 把」自相矛盾（后者统计的是**执行后**的状态）。已改为只报本次实际封装数与
+失败数，随后单独打印 `After:` 盘点行；本轮 4 把密钥的迁移输出已验证为
+`Wrapped 4 key(s); 0 failed.` + `After: wrapped=4 plaintext=0`。
+
+---
+
+## 13. 第四轮：证书导入（2026-09-28）
+
+按用户要求新增「导入证书」能力，用于把已有的 CA / 证书链搬进 LocalCA。第 11 轮曾把
+「本版本只签发、不导入」写进结论（11.1）与 README（12.1），本轮把这句话**改写为**：
+导入是受支持的一等能力，但私钥仍只进不出、入库即封装。本节记录它带来的攻击面变化与论证。
+
+### 13.1 能力与边界
+
+| 项 | 结论 |
+| --- | --- |
+| 入口 | 新页面 `/import` + `POST /api/import/`（multipart；`dry_run=1` 出计划，`dry_run=0` 落库） |
+| 支持格式（按内容识别，不看扩展名） | PEM（单/多/整链、证书与私钥同文件或分文件、`TRUSTED CERTIFICATE` 标签）；私钥 PKCS#8 / PKCS#1 / SEC1 / **加密** PKCS#8 / 传统 OpenSSL 加密 PEM；DER（证书/私钥/PKCS#7）；PKCS#7 = P7B/P7C（DER+PEM）；PKCS#12/PFX（含附加链证书、空口令、单密钥条目）；ZIP 打包上述任意格式 |
+| 明确不支持 | JKS/JCEKS（需新增 `pyjks` 依赖，与本项目零新增依赖约定冲突，给 keytool 转换指引）；SSH 密钥与 SSH 证书；PGP；CRL（识别后忽略并说明） |
+| 分层规则 | 自签 CA → 根；中间 CA 必须挂在根下、叶必须挂在中间 CA 下；**由根直接签发的终端证书**与**自签名终端证书**在 root/intermediate/leaf 模型里无法表示，计划中判为 `unsupported` 并说明原因，不硬塞 |
+| 查重 | 同 SHA-256 指纹 → `skip`；同序列号但指纹不同 → `conflict`（`serial_number` 全表唯一，只能人工处理）；库里已有该证书但无密钥、批次带密钥 → `attach_key` |
+| 属主 | 导入者即属主；只能挂到自己的 CA 下（staff 可挂任意 CA）——否则任何登录用户都能往别人的层级里塞行，而证书树是全员可见的 |
+| 限制 | ≤8 文件、单文件 ≤1 MiB、总计 ≤5 MiB、单次 ≤200 个证书/密钥；ZIP 另有条目数/解压体积/压缩比上限 |
+| 审计 | 每张写入一条 `IMPORT`（含指纹前缀与是否带密钥），另有一条汇总 |
+
+### 13.2 攻击面变化与论证
+
+**导入不新增任何权限。** 任何已登录用户本来就能自建自签名根 CA 并签发（`api_create_certificate`
+只要求登录 + 已解锁的密钥库），导入只是把「自己生成的」换成「别处生成的」，且作用域仍限
+自己的账户。因此本轮没有引入新的权限提升路径。
+
+新增的真实风险面是**上传解析器**，已按下表收口：
+
+| 风险 | 控制 |
+| --- | --- |
+| 大文件 / 海量对象 / 解压炸弹 | 文件数、单文件、总大小、对象数、ZIP 条目数/解压体积/压缩比全部设上限，超限 400 |
+| 上传物残留 | 服务端**不暂存**：dry run 与 commit 各自解析同一批文件，密钥材料只在请求内存里存在 |
+| 明文私钥落库 | 导入私钥只经 `keys.store_wrapped_key`，与生成路径同一条代码；旧明文字段写 '' |
+| 绕过密钥库 | 带密钥的导入需要已解锁，未解锁返回 409 `vault_locked`（复用前端既有解锁流程） |
+| 往别人层级塞证书 | 父级属于他人 → `conflict`（staff 例外，与 `can_manage_certificate` 语义一致） |
+| 无密钥 CA 被当成可签发 CA | `keys.issuers_with_key()` 把无密钥 CA 从 `/api/issuers` 与两个签发表单的 queryset 中排除（而非让用户填完表单再吃 409） |
+| 密钥材料进入日志/审计 | 审计只记名称、指纹前缀与是否有密钥，不含任何密钥内容 |
+
+**不变量保持不变**：仍然没有明文私钥下载端点；私钥仍只以强制口令的 PKCS12 导出；密钥仍
+要求已解锁才能使用。
+
+### 13.3 验证证据
+
+| 层次 | 做法 | 结果 |
+| --- | --- | --- |
+| 格式矩阵 | `tests_import.ImporterFormatTests`（28 项，`cryptography` 现造夹具，不依赖 openssl） | PEM/DER/PKCS7/PKCS12/ZIP、加密 PKCS#8、传统 OpenSSL 加密 PEM、`TRUSTED CERTIFICATE`（含尾部信任数据）、CSR/SSH 忽略、垃圾拒绝、四类上限、去重 全部通过 |
+| 规划与执行 | `ImportPlanTests` / `ImportApplyTests` | 层级重建、挂到已存根、父级缺失、根直签叶、自签终端证书、已存在跳过、补钥匙、序列号冲突、重名改名、他人 CA 越权、staff 例外、覆盖项、逐条失败隔离 |
+| API | `ImportApiTests` | 401 / dry run 不写库 / 未解锁 409 / 落库并出现在证书树 / 密钥为封装密文且旧明文字段为空 / 无密钥证书 `has_key=false` 且不出现在签发菜单 / staff 可见 / 非法 overrides 400 / 未知格式 400 / 审计落账 / meta 暴露格式 |
+| 真实调用链（实测） | 对 `:18001` 的 SPA API 用 dev 账号走完整流程 | 登录 → `/api/vault/status/`（wrapped=3, unsealed=false）→ 无密钥链 dry run（create×2，父级正确）→ commit（root+intermediate 落库）→ 证书树出现且 `has_key=false` → `/api/issuers/` 只剩原有带密钥 CA（无密钥的两个被排除）→ 带密钥 PKCS12 dry run 显示 `attach_key` 与 `requires_vault_unlock=true` → 未解锁提交返回 **409 vault_locked** |
+| 测试总量 | `DJANGO_TESTING=true manage.py test LocalCA` | **180 passed**（原 113 + 新增 67） |
+| lint | `pylint LocalCA/importers.py LocalCA/import_service.py` | 9.72/10（与仓库基线 9.3 相比不劣化；`tests_import.py` 9.11 高于既有测试文件 8.39） |
+
+本轮实测中发现并修掉的两个真实缺陷（都不是推理）：
+
+1. `('import', fingerprint)` 是二元组而执行层按三元组解包 → **整条链只有根被写库**，
+   中间 CA 与叶静默进 `failed`。由「链式导入落库」这一条真实调用链暴露，测试已固化。
+2. 已存在的行在计划里被显示成 `名称 (imported)`（改名避让逻辑被错误地套用到不会写入的行），
+   会误导操作者以为该证书将被重命名。已改为：`skip`/`attach_key` 显示库中真实名称，
+   除非操作者显式覆盖。
+
+另外，`cryptography` 的 PKCS#12 错误把「不是 PFX」与「口令错误」报成同一种 `ValueError`，
+因此判别必须靠外层结构（`SEQUENCE { INTEGER 3, ... }`）而不能靠异常文本——否则一张普通
+DER 证书会被误报为口令错误；`TRUSTED CERTIFICATE` 的尾部信任数据 `cryptography` 也不接受，
+需先截取首个 DER 对象。
+
+### 13.4 仍未做的 / 边界
+
+1. **没有「导入来源」列**。本轮刻意不动 schema（不出迁移 `0004`），来源只体现在审计日志里。
+2. **JKS 仍不支持**（依赖决策），README 给 `keytool -importkeystore` 转换指引。
+3. **PKCS#12 只支持单密钥条目**：`cryptography` 无法枚举多密钥条目的 p12，需逐个导出。
+4. **导入的证书不会覆盖既有同名证书**，只跳过或报冲突；没有「替换」语义。
+5. **无密钥的 CA 永远不能签发**，只能作为登记与信任链的一环存在（这是设计，不是缺陷）。
+6. 导入**不改动**已分发证书：吊销在这里仍只是记录，没有 CRL/OCSP（见 11.5 第 1 条）。

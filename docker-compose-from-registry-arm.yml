@@ -1,11 +1,27 @@
+# Data locations (state this explicitly -- it is easy to get wrong):
+#   * The SQLite database is the named volume `db`, mounted at
+#     /app/localca_project/db -- the Django project directory inside the image,
+#     which is where settings.py puts it. Inspect or back it up with:
+#       docker volume inspect <project>_db
+#       docker run --rm -v <project>_db:/data -v "$PWD":/out alpine \
+#         tar czf /out/localca-db-backup.tgz -C /data .
+#     It is NOT in the source directory.
+#   * Collected static files live in `static_volume` (regenerable, not backup
+#     material). `web` mounts it at /app/localca_project/staticfiles because that
+#     is STATIC_ROOT; nginx mounts the same volume at /app/staticfiles, which is
+#     the path nginx.conf aliases. Only the mount point differs -- the content is
+#     the same volume.
+#   * Upgrading from the earlier image, which kept everything under /app? The
+#     mount targets and the required environment changed; see
+#     "Upgrading from an earlier version" in README.md.
 services:
   web:
     image: practicalsre/local-ca:arm-latest
     container_name: web
     restart: unless-stopped
     volumes:
-      - db:/app/db
-      - static_volume:/app/staticfiles
+      - db:/app/localca_project/db
+      - static_volume:/app/localca_project/staticfiles
     environment:
       - TZ=UTC
       # Required: LocalCA refuses to start without a secret key.
@@ -16,6 +32,9 @@ services:
       # Hostnames this deployment is served under (comma separated).
       - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-127.0.0.1,localhost}
       - DJANGO_DEBUG=false
+      # Optional: the initial superuser's password. If unset, the first start
+      # generates a random one and prints it once to the logs.
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD:-}
       - CSRF_TRUSTED_ORIGINS=${CSRF_TRUSTED_ORIGINS:-http://127.0.0.1,http://localhost}
     networks:
       - app_network

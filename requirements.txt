@@ -1,5 +1,9 @@
-Django==5.2.11
-cryptography==44.0.1
-gunicorn==23.0.0
-autopep8==2.3.2
-pylint==3.3.1
+# Runtime dependencies only. Development tooling lives in requirements-dev.txt
+# so it is not installed into the production image.
+#
+# Versions are pinned exactly, and Django is held to the 5.2 LTS line: 6.x is a
+# major release that would bring unrelated breaking changes, which is a migration
+# rather than a dependency fix. 5.2.x receives security backports.
+Django==5.2.17
+cryptography==50.0.1
+gunicorn==26.2.0

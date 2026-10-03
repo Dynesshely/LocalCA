@@ -20,6 +20,10 @@ class RootCertificate(models.Model):
         max_length=255, unique=True)  # Unique serial number
     public_key = models.TextField()
     private_key_encrypted = models.TextField()  # Encrypted private key
+    # Vault-wrapped private key (see LocalCA/vault.py). Null means the
+    # key has not been migrated yet and is still stored in the legacy
+    # column above; readers must check this field first.
+    private_key_wrapped = models.TextField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     valid_until = models.DateTimeField()
 
@@ -41,6 +45,10 @@ class IntermediateCertificate(models.Model):
         max_length=255, unique=True)  # Unique serial number
     public_key = models.TextField()
     private_key_encrypted = models.TextField()  # Encrypted private key
+    # Vault-wrapped private key (see LocalCA/vault.py). Null means the
+    # key has not been migrated yet and is still stored in the legacy
+    # column above; readers must check this field first.
+    private_key_wrapped = models.TextField(null=True, blank=True)
     signed_by_root = models.ForeignKey(
         RootCertificate, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -66,6 +74,10 @@ class LeafCertificate(models.Model):
         max_length=255, unique=True)  # Unique serial number
     public_key = models.TextField()
     private_key_encrypted = models.TextField()  # Encrypted private key
+    # Vault-wrapped private key (see LocalCA/vault.py). Null means the
+    # key has not been migrated yet and is still stored in the legacy
+    # column above; readers must check this field first.
+    private_key_wrapped = models.TextField(null=True, blank=True)
     signed_by_intermediate = models.ForeignKey(
         IntermediateCertificate, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -182,3 +194,25 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"{self.action} by {self.performed_by} at {self.timestamp}"
+
+
+class VaultRootKey(models.Model):
+    """
+    A user's vault root key, wrapped with their vault password.
+
+    The password itself is never stored: the root key is wrapped with a
+    scrypt-derived key-encryption key at wrap time and can only be unwrapped by
+    supplying that password again. Losing the password therefore makes every
+    private key under this account unrecoverable; there is deliberately no
+    recovery path.
+    """
+    user = models.OneToOneField(
+        User,
+        on_delete=models.CASCADE,
+        related_name='vault_root_key')
+    wrapped_root_key = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"VaultRootKey(user={self.user_id})"

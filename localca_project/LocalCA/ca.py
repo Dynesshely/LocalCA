@@ -5,7 +5,7 @@ root, intermediate, and leaf certificates.
 
 import logging
 import ipaddress
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -15,6 +15,11 @@ from cryptography.hazmat.primitives.serialization import pkcs12
 
 
 logger = logging.getLogger(__name__)
+
+# Every timestamp produced here is timezone-aware UTC. X.509 validity is an
+# absolute instant, so a naive datetime (what datetime.utcnow() returns, and
+# which is deprecated as of Python 3.12) is both ambiguous and a bug waiting to
+# happen once anything compares it against a local time.
 
 
 class CertificateAuthority:
@@ -83,9 +88,9 @@ class CertificateAuthority:
         ).serial_number(
             x509.random_serial_number()
         ).not_valid_before(
-            datetime.utcnow()
+            datetime.now(timezone.utc)
         ).not_valid_after(
-            datetime.utcnow() + timedelta(days=validity_days)
+            datetime.now(timezone.utc) + timedelta(days=validity_days)
         ).add_extension(
             # Subject Key Identifier for this certificate
             ski,
@@ -278,9 +283,9 @@ class CertificateAuthority:
         ).serial_number(
             x509.random_serial_number()
         ).not_valid_before(
-            datetime.utcnow()
+            datetime.now(timezone.utc)
         ).not_valid_after(
-            datetime.utcnow() + timedelta(days=validity_days)
+            datetime.now(timezone.utc) + timedelta(days=validity_days)
         ).add_extension(
             # Subject Key Identifier for the issued certificate
             ski,
@@ -328,9 +333,9 @@ class CertificateAuthority:
         ).serial_number(
             x509.random_serial_number()
         ).not_valid_before(
-            datetime.utcnow()
+            datetime.now(timezone.utc)
         ).not_valid_after(
-            datetime.utcnow() + timedelta(days=validity_days)
+            datetime.now(timezone.utc) + timedelta(days=validity_days)
         )
 
         # Add SAN extension if present in the CSR

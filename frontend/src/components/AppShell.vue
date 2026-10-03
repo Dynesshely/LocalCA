@@ -5,6 +5,7 @@
 import { computed } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import ThemeToggle from '@/components/ThemeToggle.vue'
+import BrandMark from '@/components/BrandMark.vue'
 import FeedbackMessages from '@/components/FeedbackMessages.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toasts'
@@ -19,6 +20,7 @@ const navItems = computed(() => {
   if (auth.isAuthenticated) {
     items.push({ name: 'create-ca', label: 'Create CA', icon: 'plus' })
     items.push({ name: 'create-leaf', label: 'Create Leaf', icon: 'plus' })
+    items.push({ name: 'import', label: 'Import', icon: 'upload' })
   }
   if (auth.isStaff) {
     items.push({ name: 'audit', label: 'Audit Log', icon: 'list' })
@@ -44,10 +46,13 @@ async function signOut() {
       style="background-color: var(--color-brand-800)"
     >
       <nav class="mx-auto flex w-full max-w-[1400px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-6">
-        <RouterLink :to="{ name: 'home' }" class="flex flex-col leading-none">
-          <span class="text-xl font-medium">Local CA</span>
-          <span class="hidden text-xs font-light italic opacity-90 sm:block">
-            Your own internal certificate authority
+        <RouterLink :to="{ name: 'home' }" class="flex items-center gap-2.5 leading-none">
+          <BrandMark :size="30" />
+          <span class="flex flex-col leading-none">
+            <span class="text-xl font-medium">Local CA</span>
+            <span class="hidden text-xs font-light italic opacity-90 sm:block">
+              Your own internal certificate authority
+            </span>
           </span>
         </RouterLink>
 

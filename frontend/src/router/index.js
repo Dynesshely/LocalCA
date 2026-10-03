@@ -26,6 +26,12 @@ const routes = [
     meta: { requiresAuth: true, title: 'Create Leaf Certificate' },
   },
   {
+    path: '/import',
+    name: 'import',
+    component: () => import('@/views/ImportView.vue'),
+    meta: { requiresAuth: true, title: 'Import Certificates' },
+  },
+  {
     // Kept for compatibility with the old template URL.
     path: '/create_intermediate',
     redirect: { name: 'create-ca' },

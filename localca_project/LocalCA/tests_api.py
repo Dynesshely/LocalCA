@@ -7,7 +7,9 @@ you own, revoke/delete are owner-or-staff and POST-only, and private key
 material is owner-only.
 """
 import json
+import re
 
+from django.conf import settings
 from django.contrib.auth.models import User
 from django.test import TestCase
 from django.urls import reverse
@@ -59,6 +61,27 @@ class ApiTestBase(TestCase):
             private_key_encrypted=leaf_data['private_key'],
             signed_by_intermediate=cls.intermediate,
             valid_until=leaf_data['valid_until'], created_by=cls.owner)
+
+    #: The password used to unseal the vault in tests. Chosen to exceed the
+    #: minimum length the rotate endpoint enforces.
+    VAULT_PASSWORD = 'vault-test-password-123'
+
+    def setUp(self):
+        # Unseal the owner's vault for each test. The unsealed key store is
+        # process-global, so it must be set per test rather than in
+        # setUpTestData (which runs in its own transaction).
+        super().setUp()
+        self.unseal_vault(self.owner, self.VAULT_PASSWORD)
+
+    @classmethod
+    def unseal_vault(cls, user, password=None):
+        from LocalCA.keys import ensure_root_key
+        return ensure_root_key(user.id, password or cls.VAULT_PASSWORD)
+
+    @classmethod
+    def lock_vault(cls, user):
+        from LocalCA.vault import unsealed
+        unsealed.lock(user.id)
 
     def post_json(self, url, payload):
         return self.client.post(url, data=json.dumps(payload),
@@ -202,7 +225,28 @@ class CertificateCreationApiTests(ApiTestBase):
         response = self.post_form('/api/certificates/create/root/', {
             'common_name': 'Second Root CA', 'validity_days': '3650'})
         self.assertEqual(response.status_code, 201)
-        self.assertTrue(RootCertificate.objects.filter(name='Second Root CA').exists())
+        created = RootCertificate.objects.get(name='Second Root CA')
+        # New keys must never land in the plaintext column.
+        self.assertTrue(created.private_key_wrapped)
+        self.assertFalse(created.private_key_encrypted)
+
+    def test_create_root_is_refused_while_the_vault_is_locked(self):
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        self.lock_vault(self.owner)
+        response = self.post_form('/api/certificates/create/root/', {
+            'common_name': 'Locked Root CA', 'validity_days': '365'})
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(response.json().get('vault_locked'))
+        self.assertFalse(RootCertificate.objects.filter(name='Locked Root CA').exists())
+
+    def test_signing_an_intermediate_is_refused_while_locked(self):
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        self.lock_vault(self.owner)
+        response = self.post_form('/api/certificates/create/intermediate/', {
+            'common_name': 'Locked Intermediate', 'validity_days': '365',
+            'root_id': str(self.root.id)})
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(response.json().get('vault_locked'))
 
     def test_create_leaf_with_sans(self):
         self.client.login(username='api-owner', password='pw-Owner-123')
@@ -392,30 +436,49 @@ class DownloadApiTests(ApiTestBase):
         body = response.content.decode()
         self.assertEqual(body.count('BEGIN CERTIFICATE'), 2)
 
-    def test_private_pem_requires_ownership(self):
-        url = reverse('api:download_private', args=[self.leaf.serial_number])
-        self.assertEqual(self.client.get(url).status_code, 401)
-
-        self.client.login(username='api-other', password='pw-Other-123')
-        self.assertEqual(self.client.get(url).status_code, 403)
-
-        self.client.login(username='api-owner', password='pw-Owner-123')
-        response = self.client.get(url)
-        self.assertEqual(response.status_code, 200)
-        self.assertIn('BEGIN RSA PRIVATE KEY', response.content.decode())
-        self.assertEqual(response['Cache-Control'], 'no-store')
+    def test_there_is_no_plaintext_private_key_endpoint(self):
+        '''
+        The plaintext PEM export was removed on purpose: it would write a private
+        key to the browser's download directory and make at-rest encryption
+        meaningless.
+        '''
+        response = self.client.get(
+            f'/api/download/{self.leaf.serial_number}/private/')
+        self.assertEqual(response.status_code, 404)
+        # And it must be a JSON 404, not the SPA shell answering 200.
+        self.assertEqual(response['Content-Type'], 'application/json')
 
     def test_pkcs12_requires_ownership(self):
         url = reverse('api:download_pkcs12', args=[self.leaf.serial_number])
-        self.assertEqual(self.client.get(url).status_code, 401)
+        # POST-only now, so an anonymous GET is a 405 rather than a body leak.
+        self.assertEqual(self.client.get(url).status_code, 405)
         self.client.login(username='api-other', password='pw-Other-123')
-        self.assertEqual(self.client.get(url).status_code, 403)
+        response = self.client.post(url, {'p12_password': 'secret-pass'})
+        self.assertEqual(response.status_code, 403)
 
+    def test_pkcs12_requires_a_password(self):
         self.client.login(username='api-owner', password='pw-Owner-123')
-        response = self.client.post(url, {'p12_password': 'secret'})
+        url = reverse('api:download_pkcs12', args=[self.leaf.serial_number])
+        response = self.post_form(url, {'p12_password': ''})
+        self.assertEqual(response.status_code, 400)
+        response = self.post_form(url, {'p12_password': 'short'})
+        self.assertEqual(response.status_code, 400)
+
+    def test_pkcs12_exports_a_password_protected_bundle(self):
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        url = reverse('api:download_pkcs12', args=[self.leaf.serial_number])
+        response = self.post_form(url, {'p12_password': 'export-password'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/x-pkcs12')
         self.assertGreater(len(response.content), 0)
+
+        # The bundle must actually be encrypted: the private key PEM must not
+        # appear in the bytes, and it must open with the supplied password.
+        from cryptography.hazmat.primitives.serialization import pkcs12
+        self.assertNotIn(b'BEGIN RSA PRIVATE KEY', response.content)
+        _key, cert, _cas = pkcs12.load_key_and_certificates(
+            response.content, b'export-password')
+        self.assertIsNotNone(cert)
 
     def test_hostile_name_cannot_break_the_disposition_header(self):
         self.leaf.common_name = 'evil".internal'
@@ -446,13 +509,32 @@ class SpaShellTests(ApiTestBase):
     '''Deep links must serve the shell so the client router can take over.'''
 
     def test_root_and_deep_links_serve_the_spa(self):
+        '''
+        Every client route answers with the shell so the router can take over.
+
+        CI runs the suite without a pnpm build, where the app-directory
+        placeholder is served instead, so both outcomes are accepted. A *built*
+        shell has one further obligation: the bundle it references has to exist.
+        The entry name carries a content hash, hence the shape match -- asserting
+        a fixed ``app.js`` would pin the old naming and could not notice a shell
+        that points at an asset a rebuild has since replaced.
+        '''
+        built = (settings.FRONTEND_DIST / 'index.html').exists()
         for path in ('/', '/create/leaf', '/create/ca', '/login',
                      '/change-password', '/audit'):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 200, path)
             body = response.content.decode()
+            if not built:
+                self.assertIn('frontend not built', body)
+                continue
             self.assertIn('<div id="app"', body)
-            self.assertIn('app.js', body)
+            entry = re.search(r'src="(/static/assets/[^"]+\.js)"', body)
+            self.assertIsNotNone(entry, body[:200])
+            relative = entry.group(1).replace('/static/', '', 1)
+            self.assertTrue(
+                (settings.FRONTEND_DIST / relative).exists(),
+                f'the shell references a bundle that is not there: {relative}')
 
     def test_shell_plants_a_csrf_cookie(self):
         response = self.client.get('/')

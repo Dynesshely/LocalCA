@@ -7,16 +7,41 @@
  */
 import { computed, onMounted, reactive, ref } from 'vue'
 import FormField from '@/components/FormField.vue'
+import VaultUnlockDialog from '@/components/VaultUnlockDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
+import { useVaultStore } from '@/stores/vault'
 import { useToastStore } from '@/stores/toasts'
 import { ApiError } from '@/api/client'
 
 const auth = useAuthStore()
 const certificates = useCertificatesStore()
+const vault = useVaultStore()
 const toasts = useToastStore()
 
 const busy = ref(false)
+const unlockOpen = ref(false)
+const unlockReason = ref('')
+let retryAfterUnlock = null
+
+/** True when the server refused because the vault is closed. */
+function isVaultLocked(err) {
+  return err instanceof ApiError && err.status === 409 && err.payload?.vault_locked
+}
+
+function askToUnlock(reason, retry) {
+  unlockReason.value = reason
+  retryAfterUnlock = retry || null
+  unlockOpen.value = true
+}
+
+async function onUnlocked() {
+  unlockOpen.value = false
+  await vault.load()
+  const retry = retryAfterUnlock
+  retryAfterUnlock = null
+  if (retry) { await retry() }
+}
 const errors = ref([])
 
 const rootForm = reactive({ common_name: '', validity_days: 3650 })
@@ -48,6 +73,10 @@ async function submitRoot() {
     rootForm.common_name = ''
     await certificates.loadIssuers()
   } catch (err) {
+    if (isVaultLocked(err)) {
+      askToUnlock('Generating a CA key needs the vault open.', submitRoot)
+      return
+    }
     errors.value = err instanceof ApiError ? err.errors : [String(err)]
     toasts.error(errors.value[0] || 'Could not create the root CA.')
   } finally {
@@ -64,6 +93,10 @@ async function submitIntermediate() {
     intermediateForm.common_name = ''
     await certificates.loadIssuers()
   } catch (err) {
+    if (isVaultLocked(err)) {
+      askToUnlock('Signing an intermediate CA needs the vault open.', submitIntermediate)
+      return
+    }
     errors.value = err instanceof ApiError ? err.errors : [String(err)]
     toasts.error(errors.value[0] || 'Could not create the intermediate CA.')
   } finally {
@@ -267,4 +300,11 @@ function download(cert, kind) {
       </div>
     </section>
   </div>
+  <VaultUnlockDialog
+    :open="unlockOpen"
+    :busy="busy"
+    :reason="unlockReason"
+    @close="unlockOpen = false"
+    @unlocked="onUnlocked"
+  />
 </template>

@@ -10,7 +10,7 @@ defineProps({
 })
 
 const emit = defineEmits([
-  'download-public', 'download-private', 'export-pkcs12', 'revoke', 'delete',
+  'download-public', 'export-pkcs12', 'revoke', 'delete',
 ])
 </script>
 
@@ -26,7 +26,6 @@ const emit = defineEmits([
         :certificate="node.certificate"
         :depth="0"
         @download-public="emit('download-public', $event)"
-        @download-private="emit('download-private', $event)"
         @export-pkcs12="emit('export-pkcs12', $event)"
         @revoke="emit('revoke', $event)"
         @delete="emit('delete', $event)"
@@ -38,7 +37,6 @@ const emit = defineEmits([
             :certificate="branch.certificate"
             :depth="1"
             @download-public="emit('download-public', $event)"
-            @download-private="emit('download-private', $event)"
             @export-pkcs12="emit('export-pkcs12', $event)"
             @revoke="emit('revoke', $event)"
             @delete="emit('delete', $event)"
@@ -51,7 +49,6 @@ const emit = defineEmits([
               :certificate="leaf"
               :depth="2"
               @download-public="emit('download-public', $event)"
-              @download-private="emit('download-private', $event)"
               @export-pkcs12="emit('export-pkcs12', $event)"
               @revoke="emit('revoke', $event)"
               @delete="emit('delete', $event)"
