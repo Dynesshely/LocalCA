@@ -17,7 +17,19 @@ const props = defineProps({
   tone: { type: String, default: 'neutral' },
   /** Set false to require an explicit action (used by destructive dialogs). */
   closeOnBackdrop: { type: Boolean, default: true },
+  /**
+   * 'base' for a dialog the operator opened; 'top' for one the application
+   * raises *on top of* another -- the vault unlock, which answers a refusal
+   * from whatever asked for a private key.
+   *
+   * Stated explicitly because every modal is teleported into <body> as a
+   * sibling, so without it the order is whatever happened to mount first.
+   */
+  layer: { type: String, default: 'base' },
 })
+
+/** Both layers in one place, so a new dialog cannot invent its own. */
+const layerClasses = { base: 'z-50', top: 'z-[60]' }
 
 const emit = defineEmits(['close'])
 
@@ -77,7 +89,8 @@ onBeforeUnmount(() => document.removeEventListener('keydown', onKeydown))
   <Teleport to="body">
     <div
       v-if="open"
-      class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+      class="fixed inset-0 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+      :class="layerClasses[layer] || layerClasses.base"
       role="presentation"
       @click.self="closeOnBackdrop && emit('close')"
     >

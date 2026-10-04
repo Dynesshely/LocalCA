@@ -56,6 +56,7 @@ async function submit() {
     :open="open"
     :title="t('dialog.vault.title')"
     :close-on-backdrop="false"
+    layer="top"
     @close="emit('close')"
   >
     <i18n-t

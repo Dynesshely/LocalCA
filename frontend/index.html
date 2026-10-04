@@ -20,6 +20,11 @@
             window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
           document.documentElement.classList.toggle('dark', theme === 'dark');
           document.documentElement.dataset.theme = theme;
+          // Native widgets the browser paints itself -- a <select>'s dropdown,
+          // scrollbars, date pickers -- take their colours from color-scheme,
+          // never from our CSS. Without this the language dropdown stayed light
+          // on a dark page.
+          document.documentElement.style.colorScheme = theme;
         } catch (e) { /* storage disabled: stay light */ }
       })();
     </script>

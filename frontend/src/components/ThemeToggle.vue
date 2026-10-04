@@ -13,12 +13,16 @@ const isDark = ref(false)
 
 onMounted(() => {
   isDark.value = document.documentElement.classList.contains('dark')
+  document.documentElement.style.colorScheme = isDark.value ? 'dark' : 'light'
 })
 
 function toggle() {
   isDark.value = !isDark.value
   document.documentElement.classList.toggle('dark', isDark.value)
   document.documentElement.dataset.theme = isDark.value ? 'dark' : 'light'
+  // Keeps browser-painted widgets (the language <select>'s popup, scrollbars)
+  // in step with the theme the app is using.
+  document.documentElement.style.colorScheme = isDark.value ? 'dark' : 'light'
   try {
     localStorage.setItem('theme', isDark.value ? 'dark' : 'light')
   } catch (err) {

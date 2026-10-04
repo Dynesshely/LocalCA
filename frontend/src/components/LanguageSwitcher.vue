@@ -45,7 +45,13 @@ const current = computed({
       class="w-full cursor-pointer appearance-none rounded-lg bg-transparent py-2 pr-8 pl-8 text-sm font-medium focus:outline-none"
       data-testid="language-switcher"
     >
-      <option v-for="option in SUPPORTED_LOCALES" :key="option.code" :value="option.code" :lang="option.htmlLang">
+      <option
+        v-for="option in SUPPORTED_LOCALES"
+        :key="option.code"
+        :value="option.code"
+        :lang="option.htmlLang"
+        class="bg-white text-slate-700 dark:bg-slate-800 dark:text-slate-100"
+      >
         {{ option.label }}
       </option>
     </select>

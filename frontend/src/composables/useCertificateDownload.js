@@ -94,7 +94,10 @@ export function useCertificateDownload() {
       pendingCertificate.value = null
     } catch (err) {
       if (err instanceof ApiError && err.vaultLocked) {
-        // Ask for the vault password, then repeat this exact download.
+        // Close this dialog before raising the unlock one. The operator has
+        // already answered it -- the password or the confirmation is in `body` --
+        // and two stacked dialogs is a worse question than one.
+        pendingFormat.value = null
         const target = certificate
         vault.requestUnlock(
           t('home.download.unlockReason', { name: certificateName(certificate) }),
