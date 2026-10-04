@@ -975,6 +975,20 @@ def _download_private(request, cert, spec):
         return _error(_('Authentication required.'), status=401)
     if not can_manage_certificate(request.user, cert):
         raise PermissionDenied('You do not have permission')
+    if not is_owner(request.user, cert) and is_wrapped(cert):
+        # Staff may revoke and delete somebody else's certificate, but they can
+        # never read its key: the vault root key is per account and there is no
+        # escrow, so unwrapping with the *caller's* root key can only fail. Say
+        # that, instead of surfacing "ciphertext failed authentication", which
+        # reads like corruption rather than a permission boundary.
+        #
+        # Only wrapped keys: a legacy plaintext key needs no vault at all, so the
+        # old rule -- owner, or staff -- still applies to it.
+        return _error(
+            _("This certificate belongs to another account. Its private key is "
+              "wrapped with that account's vault password, so nobody else, "
+              "including an administrator, can export it."),
+            status=409)
 
     name = _download_name(cert)
     kind = _download_kind(cert)

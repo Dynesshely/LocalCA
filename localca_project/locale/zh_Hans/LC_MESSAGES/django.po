@@ -292,6 +292,9 @@ msgstr "密钥库口令不正确，或存储的密钥已被改动。"
 msgid "The vault password is incorrect."
 msgstr "密钥库口令不正确。"
 
+msgid "This certificate belongs to another account. Its private key is wrapped with that account's vault password, so nobody else, including an administrator, can export it."
+msgstr "这张证书属于其他账号。它的私钥由该账号的密钥库口令包裹，因此除该账号本人外谁都导不出来，管理员也不行。"
+
 msgid "This certificate has no stored private key."
 msgstr "这张证书没有存储私钥。"
 

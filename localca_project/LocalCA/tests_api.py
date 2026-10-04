@@ -563,6 +563,41 @@ class DownloadApiTests(ApiTestBase):
                                                             'p12_password': 'password-1'})
                 self.assertEqual(response.status_code, 403)
 
+    def test_staff_cannot_export_another_accounts_private_key(self):
+        '''
+        Staff may revoke and delete somebody else's certificate, but never read
+        its key: the vault root key is per account and there is no escrow, so
+        decrypting with the caller's root key cannot succeed. The refusal has to
+        say that, rather than surface a ciphertext error that reads like
+        corruption.
+        '''
+        from LocalCA.keys import root_key_for, store_wrapped_key
+        store_wrapped_key(self.leaf, 'leaf', self.leaf.private_key_encrypted,
+                          root_key_for(self.owner))
+        self.leaf.refresh_from_db()
+
+        self.client.login(username='api-staff', password='pw-Staff-123')
+        for fmt in ('pkcs12', 'key', 'key-plain', 'pair-zip'):
+            with self.subTest(fmt=fmt):
+                response = self.post_form(self.url(fmt), {
+                    'confirm': 'true', 'key_password': 'password-1',
+                    'p12_password': 'password-1'})
+                self.assertEqual(response.status_code, 409)
+                self.assertIn('another account', response.json()['errors'][0])
+        # The guard is about the private key only: the certificate itself is
+        # public material, and staff can still take it.
+        self.assertEqual(self.client.get(self.url('pem')).status_code, 200)
+
+    def test_staff_may_export_a_legacy_plaintext_key(self):
+        '''
+        The fixture's keys are legacy plaintext, which no vault protects, so the
+        older rule -- owner, or staff -- still decides those.
+        '''
+        self.client.login(username='api-staff', password='pw-Staff-123')
+        response = self.post_form(self.url('key-plain'), {'confirm': 'true'})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('BEGIN PRIVATE KEY', response.content.decode())
+
     def test_private_formats_need_an_open_vault(self):
         '''
         Without the vault password there is nothing to decrypt with, so the

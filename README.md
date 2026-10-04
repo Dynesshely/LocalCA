@@ -182,8 +182,10 @@ a **vault password**:
   owner, remain cleartext: `python manage.py vault_status` lists exactly which
   keys are encrypted and which are not. Run
   `python manage.py rewrap_keys --username <user>` to encrypt the rest.
-* Private keys are exported only as a **password-protected PKCS12 bundle**. There
-  is no plaintext private key download, by design.
+* Private keys leave the server only through the Download menu's guarded formats:
+  two password-protected ones, one where you choose the passphrase, and one that
+  must be explicitly confirmed. See
+  [Downloading certificates and keys](#downloading-certificates-and-keys).
 
 #### Certificate revocation
 
