@@ -49,21 +49,22 @@ export const certificates = {
 }
 
 export const files = {
-  /** Public certificate, or a leaf's chain. Needs no vault. */
-  publicPem: (serial, name) => download(`/api/download/${serial}/pem/`, `${name}.pem`),
-
   /**
-   * Password-protected PKCS12 export.
+   * Download one format of a certificate.
    *
-   * This is the only way a private key leaves the system: the server requires an
-   * export password and will not emit an unencrypted bundle. There is
-   * deliberately no plaintext private key download.
+   * One function for every format, public or private, because the server owns
+   * the list and the rules (`/api/meta/` -> `download_formats`); the client only
+   * decides *which* one the operator asked for.
+   *
+   * `body` carries whatever that format needs: an export password for the
+   * encrypted ones, or `confirm` for the unprotected ones. A GET means no body
+   * went with it, which is exactly how the public formats are fetched.
    */
-  pkcs12: (serial, name, password) => {
-    const body = new FormData()
-    body.append('p12_password', password)
-    return download(`/api/download/${serial}/pkcs12/`, `${name}.p12`, body)
-  },
+  format: (serial, format, fallbackName, body) => (
+    body
+      ? download(`/api/download/${serial}/${format}/`, fallbackName, body)
+      : download(`/api/download/${serial}/${format}/`, fallbackName)
+  ),
 }
 
 export const audit = {

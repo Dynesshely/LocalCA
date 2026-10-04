@@ -91,6 +91,9 @@ msgstr "本次上传中有加密私钥，因未提供口令而跳过。"
 msgid "An export password of at least 8 characters is required: the bundle contains a private key and is never written unencrypted."
 msgstr "必须设置至少 8 位的导出口令：导出包内含私钥，绝不会以未加密形式落盘。"
 
+msgid "An export password of at least 8 characters is required: the key is never written unencrypted without one."
+msgstr "必须设置至少 8 位的导出口令：没有口令就不会导出未加密的私钥。"
+
 msgid "An intermediate CA needs its root CA."
 msgstr "中间 CA 必须指定其根 CA。"
 
@@ -132,6 +135,9 @@ msgstr "无法打开密钥库：%(error)s"
 
 msgid "Create a vault password before generating CA keys: certificate private keys are stored encrypted and the vault is locked."
 msgstr "生成 CA 密钥前请先设置密钥库口令：证书私钥以加密方式存储，而当前密钥库处于锁定状态。"
+
+msgid "Exporting an unprotected private key has to be confirmed: resend with confirm=true, or choose a password-protected format instead."
+msgstr "导出未加密私钥需要明确确认：请带 confirm=true 重新请求，或改用有口令保护的格式。"
 
 msgid "Ignored %(label)s in %(source)s: %(reason)s."
 msgstr "已忽略 %(source)s 中的 %(label)s：%(reason)s。"

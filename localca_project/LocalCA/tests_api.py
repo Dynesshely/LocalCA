@@ -483,46 +483,135 @@ class RevokeDeleteApiTests(ApiTestBase):
 
 
 class DownloadApiTests(ApiTestBase):
+    '''
+    What each download format promises.
 
-    def test_public_pem_is_anonymous_and_returns_a_chain_for_leaves(self):
-        response = self.client.get(
-            reverse('api:download_pem', args=[self.leaf.serial_number]))
-        self.assertEqual(response.status_code, 200)
-        body = response.content.decode()
-        self.assertEqual(body.count('BEGIN CERTIFICATE'), 2)
+    Two families, and the boundary between them is the thing worth testing:
+    public formats hand out certificate material to anyone (that is how a client
+    fetches its CA), private formats require authentication, ownership, an open
+    vault, and either a password or an explicit confirmation.
+    '''
 
-    def test_there_is_no_plaintext_private_key_endpoint(self):
-        '''
-        The plaintext PEM export was removed on purpose: it would write a private
-        key to the browser's download directory and make at-rest encryption
-        meaningless.
-        '''
-        response = self.client.get(
-            f'/api/download/{self.leaf.serial_number}/private/')
+    def url(self, fmt, cert=None):
+        target = cert or self.leaf
+        return reverse('api:download', args=[target.serial_number, fmt])
+
+    # --- public -----------------------------------------------------------
+
+    def test_public_formats_are_anonymous(self):
+        for fmt, content_type in (('pem', 'application/x-pem-file'),
+                                  ('der', 'application/pkix-cert'),
+                                  ('chain', 'application/x-pem-file'),
+                                  ('p7b', 'application/pkcs7-mime')):
+            with self.subTest(fmt=fmt):
+                response = self.client.get(self.url(fmt))
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response['Content-Type'], content_type)
+                self.assertGreater(len(response.content), 0)
+
+    def test_pem_is_the_certificate_alone(self):
+        '''`pem` is one certificate; the chain has its own format.'''
+        body = self.client.get(self.url('pem')).content.decode()
+        self.assertEqual(body.count('BEGIN CERTIFICATE'), 1)
+
+    def test_chain_is_the_whole_path_root_last(self):
+        body = self.client.get(self.url('chain')).content.decode()
+        self.assertEqual(body.count('BEGIN CERTIFICATE'), 3)
+        # Root last: that is the order a server wants in `ssl_trusted_certificate`.
+        self.assertTrue(body.index(self.leaf.public_key.strip()[:60])
+                        < body.index(self.root.public_key.strip()[:60]))
+
+    def test_der_and_p7b_are_parsable(self):
+        from cryptography import x509 as crypto_x509
+        der = self.client.get(self.url('der')).content
+        parsed = crypto_x509.load_der_x509_certificate(der)
+        self.assertEqual(parsed.serial_number, int(self.leaf.serial_number))
+
+        p7b = self.client.get(self.url('p7b')).content
+        from cryptography.hazmat.primitives.serialization import pkcs7
+        self.assertEqual(len(pkcs7.load_der_pkcs7_certificates(p7b)), 3)
+
+    def test_an_unknown_format_is_a_json_404(self):
+        response = self.client.get(f'/api/download/{self.leaf.serial_number}/private/')
         self.assertEqual(response.status_code, 404)
-        # And it must be a JSON 404, not the SPA shell answering 200.
+        # A JSON 404, not the SPA shell answering 200.
         self.assertEqual(response['Content-Type'], 'application/json')
 
-    def test_pkcs12_requires_ownership(self):
-        url = reverse('api:download_pkcs12', args=[self.leaf.serial_number])
-        # POST-only now, so an anonymous GET is a 405 rather than a body leak.
-        self.assertEqual(self.client.get(url).status_code, 405)
-        self.client.login(username='api-other', password='pw-Other-123')
-        response = self.client.post(url, {'p12_password': 'secret-pass'})
-        self.assertEqual(response.status_code, 403)
+    def test_hostile_name_cannot_break_the_disposition_header(self):
+        self.leaf.common_name = 'evil".internal'
+        self.leaf.save(update_fields=['common_name'])
+        disposition = self.client.get(self.url('pem'))['Content-Disposition']
+        self.assertTrue(disposition.startswith('attachment; filename="'))
+        self.assertNotIn('\n', disposition)
 
-    def test_pkcs12_requires_a_password(self):
+    # --- private ----------------------------------------------------------
+
+    def test_private_formats_require_authentication(self):
+        for fmt in ('pkcs12', 'key', 'key-plain', 'pair-zip'):
+            with self.subTest(fmt=fmt):
+                response = self.client.post(self.url(fmt), {'confirm': 'true',
+                                                            'key_password': 'password-1',
+                                                            'p12_password': 'password-1'})
+                self.assertEqual(response.status_code, 401)
+
+    def test_private_formats_require_ownership(self):
+        self.client.login(username='api-other', password='pw-Other-123')
+        for fmt in ('pkcs12', 'key', 'key-plain', 'pair-zip'):
+            with self.subTest(fmt=fmt):
+                response = self.client.post(self.url(fmt), {'confirm': 'true',
+                                                            'key_password': 'password-1',
+                                                            'p12_password': 'password-1'})
+                self.assertEqual(response.status_code, 403)
+
+    def test_private_formats_need_an_open_vault(self):
+        '''
+        Without the vault password there is nothing to decrypt with, so the
+        answer is 409 + vault_locked and the interface can offer to unlock.
+
+        The fixture's keys are legacy plaintext, which needs no vault at all, so
+        this test wraps the key first: the point is the wrapped case, and it has
+        to build that state rather than assume it.
+        '''
+        from LocalCA.keys import root_key_for, store_wrapped_key
+        store_wrapped_key(self.leaf, 'leaf', self.leaf.private_key_encrypted,
+                          root_key_for(self.owner))
+        self.leaf.refresh_from_db()
+        self.assertNotEqual(self.leaf.private_key_wrapped, '')
+        self.lock_vault(self.owner)
+
         self.client.login(username='api-owner', password='pw-Owner-123')
-        url = reverse('api:download_pkcs12', args=[self.leaf.serial_number])
-        response = self.post_form(url, {'p12_password': ''})
-        self.assertEqual(response.status_code, 400)
-        response = self.post_form(url, {'p12_password': 'short'})
-        self.assertEqual(response.status_code, 400)
+        for fmt in ('pkcs12', 'key', 'key-plain', 'pair-zip'):
+            with self.subTest(fmt=fmt):
+                response = self.client.post(self.url(fmt), {'confirm': 'true',
+                                                            'key_password': 'password-1',
+                                                            'p12_password': 'password-1'})
+                self.assertEqual(response.status_code, 409)
+                self.assertTrue(response.json().get('vault_locked'))
+
+    def test_password_formats_reject_a_short_password(self):
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        for fmt in ('pkcs12', 'key'):
+            with self.subTest(fmt=fmt):
+                for weak in ('', 'short'):
+                    response = self.post_form(self.url(fmt), {'key_password': weak,
+                                                              'p12_password': weak})
+                    self.assertEqual(response.status_code, 400)
+
+    def test_unprotected_formats_require_an_explicit_confirmation(self):
+        '''
+        The guard that makes an unprotected export deliberate: without
+        confirm=true the request is refused, so no stray link can produce one.
+        '''
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        for fmt in ('key-plain', 'pair-zip'):
+            with self.subTest(fmt=fmt):
+                response = self.post_form(self.url(fmt), {})
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('confirm', response.json()['errors'][0])
 
     def test_pkcs12_exports_a_password_protected_bundle(self):
         self.client.login(username='api-owner', password='pw-Owner-123')
-        url = reverse('api:download_pkcs12', args=[self.leaf.serial_number])
-        response = self.post_form(url, {'p12_password': 'export-password'})
+        response = self.post_form(self.url('pkcs12'), {'p12_password': 'export-password'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/x-pkcs12')
         self.assertGreater(len(response.content), 0)
@@ -530,19 +619,97 @@ class DownloadApiTests(ApiTestBase):
         # The bundle must actually be encrypted: the private key PEM must not
         # appear in the bytes, and it must open with the supplied password.
         from cryptography.hazmat.primitives.serialization import pkcs12
-        self.assertNotIn(b'BEGIN RSA PRIVATE KEY', response.content)
+        self.assertNotIn(b'BEGIN PRIVATE KEY', response.content)
         _key, cert, _cas = pkcs12.load_key_and_certificates(
             response.content, b'export-password')
         self.assertIsNotNone(cert)
 
-    def test_hostile_name_cannot_break_the_disposition_header(self):
-        self.leaf.common_name = 'evil".internal'
-        self.leaf.save(update_fields=['common_name'])
-        response = self.client.get(
-            reverse('api:download_pem', args=[self.leaf.serial_number]))
-        disposition = response['Content-Disposition']
-        self.assertTrue(disposition.startswith('attachment; filename="'))
-        self.assertNotIn('\n', disposition)
+    def test_key_is_an_encrypted_pkcs8_private_key(self):
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        response = self.post_form(self.url('key'), {'key_password': 'export-password'})
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('BEGIN ENCRYPTED PRIVATE KEY', body)
+        self.assertNotIn('BEGIN PRIVATE KEY', body.replace('BEGIN ENCRYPTED PRIVATE KEY', ''))
+
+        from cryptography.hazmat.primitives import serialization
+        key = serialization.load_pem_private_key(response.content,
+                                                 password=b'export-password')
+        self.assertIsNotNone(key)
+        # It must be the key that belongs to the certificate it came with.
+        self.assertIn(b'PRIVATE KEY', response.content)
+
+    def test_key_plain_is_unprotected_and_matches_the_certificate(self):
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        response = self.post_form(self.url('key-plain'), {'confirm': 'true'})
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode()
+        self.assertIn('BEGIN PRIVATE KEY', body)
+        self.assertNotIn('ENCRYPTED', body)
+
+        from cryptography.hazmat.primitives import serialization
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        key = serialization.load_pem_private_key(response.content, password=None)
+        self.assertIsInstance(key, rsa.RSAPrivateKey)
+
+        # The public half has to be the certificate's own subject public key.
+        from cryptography import x509 as crypto_x509
+        cert = crypto_x509.load_pem_x509_certificate(self.leaf.public_key.encode())
+        self.assertEqual(key.public_key().public_numbers(),
+                         cert.public_key().public_numbers())
+
+    def test_pair_zip_contains_certificate_key_and_chain(self):
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        response = self.post_form(self.url('pair-zip'), {'confirm': 'true'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/zip')
+
+        import io
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            names = set(archive.namelist())
+            self.assertIn(f'{self.leaf.common_name}.crt', names)
+            self.assertIn(f'{self.leaf.common_name}.key', names)
+            self.assertIn('chain.pem', names)
+            key = archive.read(f'{self.leaf.common_name}.key').decode()
+            self.assertIn('BEGIN PRIVATE KEY', key)
+            self.assertNotIn('ENCRYPTED', key)
+            # The chain file carries the two issuers, not the leaf again.
+            chain = archive.read('chain.pem').decode()
+            self.assertEqual(chain.count('BEGIN CERTIFICATE'), 2)
+
+    def test_a_certificate_without_a_key_cannot_be_exported(self):
+        '''Imported inventory can be listed and revoked, but has no key to give.'''
+        keyless = LeafCertificate.objects.create(
+            common_name='keyless.internal', serial_number='990011',
+            public_key=self.leaf.public_key, private_key_encrypted='',
+            valid_until=self.leaf.valid_until,
+            signed_by_intermediate=self.intermediate, created_by=self.owner)
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        response = self.post_form(self.url('key-plain', keyless), {'confirm': 'true'})
+        self.assertEqual(response.status_code, 409)
+
+    # --- the audit trail --------------------------------------------------
+
+    def test_both_families_are_audited(self):
+        self.client.get(self.url('pem'))
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        self.post_form(self.url('key-plain'), {'confirm': 'true'})
+
+        actions = list(AuditLog.objects.values_list('action', flat=True))
+        self.assertIn('DOWNLOAD_PUBLIC_KEY', actions)
+        self.assertIn('DOWNLOAD_PRIVATE_KEY', actions)
+
+    def test_meta_advertises_every_format_once(self):
+        payload = self.client.get('/api/meta/').json()
+        from .api import DOWNLOAD_FORMATS
+        advertised = [spec['id'] for spec in payload['download_formats']]
+        self.assertEqual(advertised, [spec['id'] for spec in DOWNLOAD_FORMATS])
+        self.assertEqual(len(advertised), len(set(advertised)))
+        for spec in payload['download_formats']:
+            self.assertIn(spec['access'], ('public', 'private'))
+            if spec['access'] == 'private':
+                self.assertIn(spec['requires'], ('password', 'confirm'))
 
 
 class AuditApiTests(ApiTestBase):

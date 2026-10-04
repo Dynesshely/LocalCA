@@ -470,8 +470,7 @@ class ReverseProxyConfigurationTests(TestCase):
             'api:create_certificate': ['leaf'],
             'api:revoke_certificate': ['leaf', 1],
             'api:delete_certificate': ['leaf', 1],
-            'api:download_pem': ['12345'],
-            'api:download_pkcs12': ['12345'],
+            'api:download': ['12345', 'pem'],
             'api:vault_status': [],
             'api:vault_unseal': [],
             'api:vault_lock': [],
@@ -484,6 +483,15 @@ class ReverseProxyConfigurationTests(TestCase):
                 reverse(name, args=args)
             except NoReverseMatch as exc:
                 self.fail(f"API URL {name} failed to resolve: {exc}")
+
+        # Every format the API advertises has to be routable, or the menu the
+        # SPA builds from that table would offer downloads that 404.
+        from .api import DOWNLOAD_FORMATS
+        for spec in DOWNLOAD_FORMATS:
+            try:
+                reverse('api:download', args=['12345', spec['id']])
+            except NoReverseMatch as exc:  # pragma: no cover - failure path
+                self.fail(f"Download format {spec['id']} does not resolve: {exc}")
 
     def test_spa_shell_routes_exist(self):
         """Deep links must resolve to the SPA shell."""

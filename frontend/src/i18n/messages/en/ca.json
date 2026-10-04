@@ -46,7 +46,8 @@
       "status": "Status",
       "expires": "Expires",
       "owner": "Owner",
-      "signedBy": "Signed by"
+      "signedBy": "Signed by",
+      "actions": "Actions"
     }
   }
 }

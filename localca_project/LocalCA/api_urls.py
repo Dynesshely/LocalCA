@@ -38,11 +38,12 @@ urlpatterns = [
     path('certificates/<str:cert_type>/<int:cert_id>/delete/',
          api.api_delete_certificate, name='delete_certificate'),
 
-    # downloads. There is no plaintext private key endpoint by design; see the
-    # note in api.py above api_download_pkcs12.
-    path('download/<str:serial_number>/pem/', api.api_download_pem, name='download_pem'),
-    path('download/<str:serial_number>/pkcs12/', api.api_download_pkcs12,
-         name='download_pkcs12'),
+    # downloads. The format is part of the URL and one view serves them all:
+    # api.DOWNLOAD_FORMATS is what decides which formats are public and what the
+    # private ones require, so a separate route per format would be a second
+    # place for that rule to drift.
+    path('download/<str:serial_number>/<str:download_format>/', api.api_download,
+         name='download'),
 
     # audit (staff)
     path('audit/', api.api_audit_log, name='audit_log'),

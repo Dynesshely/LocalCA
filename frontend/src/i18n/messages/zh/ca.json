@@ -46,7 +46,8 @@
       "status": "状态",
       "expires": "到期时间",
       "owner": "所有者",
-      "signedBy": "签发者"
+      "signedBy": "签发者",
+      "actions": "操作"
     }
   }
 }

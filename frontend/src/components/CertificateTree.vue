@@ -14,9 +14,9 @@ defineProps({
   tree: { type: Array, required: true },
 })
 
-const emit = defineEmits([
-  'download-public', 'export-pkcs12', 'revoke', 'delete',
-])
+// The tree is a pass-through: every event a card raises is re-emitted upward,
+// so the page that owns the behaviour is the only place that knows about it.
+const emit = defineEmits(['download', 'revoke', 'delete'])
 
 const { t } = useI18n()
 </script>
@@ -31,8 +31,7 @@ const { t } = useI18n()
       <CertificateCard
         :certificate="node.certificate"
         :depth="0"
-        @download-public="emit('download-public', $event)"
-        @export-pkcs12="emit('export-pkcs12', $event)"
+        @download="emit('download', $event)"
         @revoke="emit('revoke', $event)"
         @delete="emit('delete', $event)"
       />
@@ -42,8 +41,7 @@ const { t } = useI18n()
           <CertificateCard
             :certificate="branch.certificate"
             :depth="1"
-            @download-public="emit('download-public', $event)"
-            @export-pkcs12="emit('export-pkcs12', $event)"
+            @download="emit('download', $event)"
             @revoke="emit('revoke', $event)"
             @delete="emit('delete', $event)"
           />
@@ -54,8 +52,7 @@ const { t } = useI18n()
               :key="`leaf-${leaf.id}`"
               :certificate="leaf"
               :depth="2"
-              @download-public="emit('download-public', $event)"
-              @export-pkcs12="emit('export-pkcs12', $event)"
+              @download="emit('download', $event)"
               @revoke="emit('revoke', $event)"
               @delete="emit('delete', $event)"
             />

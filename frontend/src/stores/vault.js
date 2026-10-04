@@ -24,6 +24,36 @@ export const useVaultStore = defineStore('vault', () => {
   const loading = ref(false)
   const error = ref('')
 
+  /**
+   * A pending "unlock so this can continue" request.
+   *
+   * Any operation that needs a private key can hit a locked vault, and the answer
+   * is always the same: ask for the password, then do the thing. Keeping the
+   * request here means one dialog in the shell serves every caller, instead of
+   * each page carrying its own copy of the open/retry bookkeeping.
+   *
+   * `{ reason, retry }` while waiting, `null` otherwise.
+   */
+  const unlockRequest = ref(null)
+
+  function requestUnlock(reason, retry) {
+    unlockRequest.value = { reason, retry: retry || null }
+  }
+
+  /** The password was accepted: run the operation that was refused. */
+  async function resolveUnlock() {
+    const request = unlockRequest.value
+    unlockRequest.value = null
+    await load()
+    if (request?.retry) {
+      await request.retry()
+    }
+  }
+
+  function clearUnlock() {
+    unlockRequest.value = null
+  }
+
   /** True when encrypted keys exist but the vault is closed. */
   const needsUnlock = computed(
     () => status.value.wrapped > 0 && !status.value.unsealed)
@@ -75,8 +105,9 @@ export const useVaultStore = defineStore('vault', () => {
   }
 
   return {
-    status, loading, error,
+    status, loading, error, unlockRequest,
     needsUnlock, hasUnprotectedKeys, needsPasswordSetup,
     load, unseal, lock, rotate,
+    requestUnlock, resolveUnlock, clearUnlock,
   }
 })

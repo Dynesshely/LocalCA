@@ -14,13 +14,12 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import CertificateTree from '@/components/CertificateTree.vue'
 import ConfirmActionDialog from '@/components/ConfirmActionDialog.vue'
-import Pkcs12Dialog from '@/components/Pkcs12Dialog.vue'
-import VaultUnlockDialog from '@/components/VaultUnlockDialog.vue'
+import ExportDialog from '@/components/ExportDialog.vue'
+import { useCertificateDownload } from '@/composables/useCertificateDownload'
 import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
 import { useVaultStore } from '@/stores/vault'
 import { useToastStore } from '@/stores/toasts'
-import { files } from '@/api'
 import { ApiError } from '@/api/client'
 
 const { t } = useI18n()
@@ -34,14 +33,6 @@ const busy = ref(false)
 const actionTarget = ref(null)
 const actionKind = ref('revoke')       // 'revoke' | 'delete'
 const actionOpen = ref(false)
-const p12Target = ref(null)
-const p12Open = ref(false)
-
-// Vault unlock: the server keeps the key in its own memory, so an action that
-// fails with vault_locked is retried after the operator unlocks.
-const unlockOpen = ref(false)
-const unlockReason = ref('')
-let retryAfterUnlock = null
 const query = ref('')
 
 const dialogCertificate = computed(() => {
@@ -87,27 +78,6 @@ onMounted(async () => {
     toasts.error(t('common.error.couldNotLoadCertificates', { message: err.message }))
   }
 })
-
-/** True when an API error means "unlock the vault and try again". */
-function isVaultLocked(err) {
-  return err instanceof ApiError && err.status === 409 && err.payload?.vault_locked
-}
-
-function askToUnlock(reason, retry) {
-  unlockReason.value = reason
-  retryAfterUnlock = retry || null
-  unlockOpen.value = true
-}
-
-async function onUnlocked() {
-  unlockOpen.value = false
-  await vault.load()
-  const retry = retryAfterUnlock
-  retryAfterUnlock = null
-  if (retry) {
-    await retry()
-  }
-}
 
 function openAction(kind, certificate) {
   if (!auth.isAuthenticated) {
@@ -155,42 +125,16 @@ async function confirmAction(payload) {
   }
 }
 
-async function doDownload(kind, certificate) {
-  try {
-    if (kind === 'public') {
-      await files.publicPem(certificate.serial_number, certificate.name)
-    }
-  } catch (err) {
-    toasts.error(err instanceof ApiError ? err.message : String(err))
-  }
-}
+/**
+ * Downloads live in a composable: which formats exist, what each one requires
+ * (a password, or an explicit confirmation), and the unlock-and-retry dance are
+ * the same on every page that lists certificates.
+ */
+const downloads = useCertificateDownload()
 
-function openPkcs12(certificate) {
-  p12Target.value = certificate
-  p12Open.value = true
-}
-
-async function exportPkcs12(password) {
-  const target = p12Target.value
-  if (!target) return
-  busy.value = true
-  try {
-    await files.pkcs12(target.serial_number, target.name, password)
-    toasts.success(t('home.pkcs12.success', { name: target.name }))
-    p12Open.value = false
-  } catch (err) {
-    if (isVaultLocked(err)) {
-      p12Open.value = false
-      askToUnlock(
-        t('home.pkcs12.unlockReason', { name: target.name }),
-        () => openPkcs12(target),
-      )
-    } else {
-      toasts.error(err instanceof ApiError ? err.message : String(err))
-    }
-  } finally {
-    busy.value = false
-  }
+/** The menu emitted `{ certificate, format }`; the composable takes it from here. */
+function onDownload({ certificate, format }) {
+  downloads.run(certificate, format)
 }
 </script>
 
@@ -277,8 +221,7 @@ async function exportPkcs12(password) {
     <CertificateTree
       v-else
       :tree="filteredTree"
-      @download-public="(c) => doDownload('public', c)"
-      @export-pkcs12="openPkcs12"
+      @download="onDownload"
       @revoke="(c) => openAction('revoke', c)"
       @delete="(c) => openAction('delete', c)"
     />
@@ -292,20 +235,14 @@ async function exportPkcs12(password) {
       @confirm="confirmAction"
     />
 
-    <Pkcs12Dialog
-      :open="p12Open"
-      :certificate="p12Target"
-      :busy="busy"
-      @close="p12Open = false"
-      @export="exportPkcs12"
-    />
-
-    <VaultUnlockDialog
-      :open="unlockOpen"
-      :busy="busy"
-      :reason="unlockReason"
-      @close="unlockOpen = false"
-      @unlocked="onUnlocked"
+    <ExportDialog
+      :open="!!downloads.pendingFormat.value"
+      :certificate="downloads.pendingCertificate.value"
+      :format="downloads.pendingFormat.value || ''"
+      :requires="downloads.requires(downloads.pendingFormat.value)"
+      :busy="downloads.busy.value || busy"
+      @close="downloads.cancel()"
+      @confirm="downloads.submit"
     />
   </div>
 </template>

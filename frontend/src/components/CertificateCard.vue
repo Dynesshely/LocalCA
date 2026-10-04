@@ -9,6 +9,7 @@
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import DownloadMenu from '@/components/DownloadMenu.vue'
 
 const props = defineProps({
   certificate: { type: Object, required: true },
@@ -16,9 +17,9 @@ const props = defineProps({
   depth: { type: Number, default: 0 },
 })
 
-// No 'download-private' event: there is deliberately no plaintext private
-// key download. Operators export a password-protected PKCS12 bundle instead.
-const emit = defineEmits(['download-public', 'export-pkcs12', 'revoke', 'delete'])
+// `download` carries `{ certificate, format }`: which format exists, and what
+// each one requires, is the server's table, not this component's business.
+const emit = defineEmits(['download', 'revoke', 'delete'])
 
 const { t, d } = useI18n()
 
@@ -135,34 +136,19 @@ function formatExpiry() {
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 shadow-sm transition hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-          @click="emit('download-public', certificate)"
-        >
-          {{ certificate.kind === 'leaf' ? t('home.action.publicChain') : t('home.action.publicKey') }}
-        </button>
+        <DownloadMenu
+          :certificate="certificate"
+          :has-key="certificate.has_key !== false"
+          @choose="(format) => emit('download', { certificate, format })"
+        />
 
-        <template v-if="certificate.is_owner">
-          <button
-            v-if="certificate.has_key !== false"
-            type="button"
-            class="rounded-lg bg-sky-600 px-2 py-1 text-xs font-medium text-white shadow-sm transition hover:bg-sky-500"
-            :title="certificate.protected
-              ? t('home.pkcs12.tooltipProtected')
-              : t('home.pkcs12.tooltipUnprotected')"
-            @click="emit('export-pkcs12', certificate)"
-          >
-            {{ t('home.action.exportPkcs12') }}
-          </button>
-          <span
-            v-if="certificate.has_key !== false && !certificate.protected"
-            class="inline-block whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
-            :title="t('home.badge.keyNotEncryptedTitle')"
-          >
-            {{ t('home.badge.keyNotEncrypted') }}
-          </span>
-        </template>
+        <span
+          v-if="certificate.has_key !== false && !certificate.protected"
+          class="inline-block whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+          :title="t('home.badge.keyNotEncryptedTitle')"
+        >
+          {{ t('home.badge.keyNotEncrypted') }}
+        </span>
 
         <template v-if="certificate.can_manage">
           <button

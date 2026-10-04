@@ -58,6 +58,36 @@
     "tree": {
       "emptyLeaves": "该中间 CA 尚未签发任何叶证书。",
       "emptyIntermediates": "该根 CA 尚未签发任何中间 CA。"
+    },
+    "download": {
+      "label": "下载",
+      "group": {
+        "certificate": "证书",
+        "privateKey": "私钥"
+      },
+      "keyBadge": "私钥",
+      "success": "已下载 {name}。",
+      "unlockReason": "下载 {name} 的私钥需要先解锁密钥库。",
+      "format": {
+        "pem": "证书（PEM）",
+        "der": "证书（DER）",
+        "chain": "完整证书链（PEM）",
+        "p7b": "完整证书链（PKCS#7）",
+        "pkcs12": "PKCS#12 打包（.p12）",
+        "key": "私钥（加密 .key）",
+        "key-plain": "私钥（未加密 .key）",
+        "pair-zip": "证书 + 私钥打包（ZIP）"
+      },
+      "hint": {
+        "pem": "仅证书本身",
+        "der": "二进制格式，供 Windows / Java 使用",
+        "chain": "证书、中间 CA 与根 CA",
+        "p7b": "整条链合并为一个文件",
+        "pkcs12": "证书与私钥合并、由口令保护",
+        "key": "PKCS#8，用你设置的口令加密",
+        "key-plain": "PKCS#8，无口令——给 nginx 这类服务用",
+        "pair-zip": "证书、未加密私钥与证书链放在一起"
+      }
     }
   }
 }

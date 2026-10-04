@@ -7,6 +7,23 @@
 
 ---
 
+## 2026-10-04 · 下载格式与语言选择控件
+
+| # | 决策 | 谁定的 | 理由 / 怎么改 |
+| --- | --- | --- | --- |
+| D31 | **推翻「私钥只走 PKCS12」的旧决定**：新增 8 种下载格式，含**未加密 PKCS#8 私钥**与 `.crt`+`.key`+`chain.pem` 的 ZIP | 用户明确要求 | 旧决定（api.py 里有注释）是为了让「静态加密」有意义。但真实运维需要裸 `.key`（nginx 根本读不了带口令的私钥），不给的结果是运维在自己机器上跑 `openssl pkcs12 -nodes`——**没有审计、没有归属校验**。现在改为：明文导出必须**显式确认**（`confirm=true`，UI 是勾选框）、需登录、需本人证书、需密钥库已解锁、并写入审计日志。要回退就删 `DOWNLOAD_FORMATS` 里 `requires: 'confirm'` 的两项 |
+| D32 | 下载格式表放在**服务端** `api.DOWNLOAD_FORMATS`，经 `/api/meta/` 下发，前端照它渲染菜单 | agent 默认 | 否则「菜单里有、后端没有」这类漂移只能靠人盯。测试里有一条断言每个格式都能 `reverse()`，另一条断言 `/api/meta/` 与表逐项一致 |
+| D33 | `/api/download/<serial>/<format>/` **一个路由**同时服务公开与私有格式，公开格式仍**免登录**（原样保留） | agent 默认 | 公开证书本来就是给客户端取信用的；把 format 写进 URL 而不是一格式一路由，避免两处维护「哪些格式是公开的」 |
+| D34 | 语言选择控件从分段按钮改为**原生 `<select>` combo box**，小地球图标保留 | 用户要求 | 原生 select 的键盘可达性、读屏播报与平台弹层都是白送的，自绘弹层要重新实现一遍 |
+| D35 | 顶层 shell 挂**唯一一个**「密钥库解锁」对话框，由 vault store 驱动；各视图不再各带一份 | agent | 签名、导出、轮换都会撞上锁定状态，原来每个视图都复制一遍 open/retry 逻辑。现在 `vault.requestUnlock(reason, retry)` 一处收口，`ApiError.vaultLocked` 一处识别 |
+| D36 | 下载菜单用 **Teleport + fixed 定位**，不用 `absolute` | agent | 它所在的卡片有 `overflow-hidden`（为了圆角标题条），表格又 `overflow-auto`——`absolute` 菜单只显示第一行就被裁掉（截图已证实）。`:style` 在这里只传几何坐标，与「配色不许走 style」的约定不冲突 |
+
+> 顺带修掉一个真 bug：`api/client.js` 的 `download()` 只接受 `FormData`，传普通对象时请求体变成字符串 `"[object Object]"`，后端一律 400——**未加密私钥导出在浏览器里其实是失败的**，只有把文件真的落到磁盘才发现。现在 `download()` 与 `request()` 用同一套 body 规则。
+>
+> 验收：无头浏览器 **24/24**，其中包含一次真实下载落地——菜单 8 项、分组正确、未确认时按钮禁用、勾选后拿到 `BEGIN PRIVATE KEY` 的明文 PKCS#8、改用口令后同一文件变成 `BEGIN ENCRYPTED PRIVATE KEY`。后端 209 项测试（下载相关 18 项）。
+
+---
+
 ## 2026-10-04 · 界面改版与全站中英双语
 
 | # | 决策 | 谁定的 | 理由 / 怎么改 |

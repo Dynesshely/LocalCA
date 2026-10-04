@@ -13,7 +13,9 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import FormField from '@/components/FormField.vue'
-import VaultUnlockDialog from '@/components/VaultUnlockDialog.vue'
+import DownloadMenu from '@/components/DownloadMenu.vue'
+import ExportDialog from '@/components/ExportDialog.vue'
+import { useCertificateDownload } from '@/composables/useCertificateDownload'
 import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
 import { useVaultStore } from '@/stores/vault'
@@ -27,28 +29,7 @@ const vault = useVaultStore()
 const toasts = useToastStore()
 
 const busy = ref(false)
-const unlockOpen = ref(false)
-const unlockReason = ref('')
-let retryAfterUnlock = null
-
-/** True when the server refused because the vault is closed. */
-function isVaultLocked(err) {
-  return err instanceof ApiError && err.status === 409 && err.payload?.vault_locked
-}
-
-function askToUnlock(reason, retry) {
-  unlockReason.value = reason
-  retryAfterUnlock = retry || null
-  unlockOpen.value = true
-}
-
-async function onUnlocked() {
-  unlockOpen.value = false
-  await vault.load()
-  const retry = retryAfterUnlock
-  retryAfterUnlock = null
-  if (retry) { await retry() }
-}
+const downloads = useCertificateDownload()
 const errors = ref([])
 const fieldErrors = ref({})
 
@@ -81,8 +62,9 @@ async function submitRoot() {
     rootForm.common_name = ''
     await certificates.loadIssuers()
   } catch (err) {
-    if (isVaultLocked(err)) {
-      askToUnlock(t('ca.createRoot.unlockReason'), submitRoot)
+    if (err instanceof ApiError && err.vaultLocked) {
+      // The shell owns the dialog; it retries this exact call once unlocked.
+      vault.requestUnlock(t('ca.createRoot.unlockReason'), submitRoot)
       return
     }
     errors.value = err instanceof ApiError ? err.errors : [String(err)]
@@ -103,8 +85,9 @@ async function submitIntermediate() {
     intermediateForm.common_name = ''
     await certificates.loadIssuers()
   } catch (err) {
-    if (isVaultLocked(err)) {
-      askToUnlock(t('ca.createIntermediate.unlockReason'), submitIntermediate)
+    if (err instanceof ApiError && err.vaultLocked) {
+      // The shell owns the dialog; it retries this exact call once unlocked.
+      vault.requestUnlock(t('ca.createIntermediate.unlockReason'), submitIntermediate)
       return
     }
     errors.value = err instanceof ApiError ? err.errors : [String(err)]
@@ -195,6 +178,7 @@ function formatDay(value) {
                   <th class="px-3 py-2 font-medium">{{ t('ca.list.status') }}</th>
                   <th class="px-3 py-2 font-medium">{{ t('ca.list.expires') }}</th>
                   <th class="px-3 py-2 font-medium">{{ t('ca.list.owner') }}</th>
+                  <th class="px-3 py-2 font-medium">{{ t('ca.list.actions') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -222,6 +206,13 @@ function formatDay(value) {
                     {{ formatDay(root.valid_until) }}
                   </td>
                   <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ root.owner || '-' }}</td>
+                  <td class="px-3 py-2">
+                    <DownloadMenu
+                      :certificate="root"
+                      :has-key="root.has_key !== false"
+                      @choose="(format) => downloads.run(root, format)"
+                    />
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -324,6 +315,7 @@ function formatDay(value) {
                   <th class="px-3 py-2 font-medium">{{ t('ca.list.status') }}</th>
                   <th class="px-3 py-2 font-medium">{{ t('ca.list.signedBy') }}</th>
                   <th class="px-3 py-2 font-medium">{{ t('ca.list.expires') }}</th>
+                  <th class="px-3 py-2 font-medium">{{ t('ca.list.actions') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -351,6 +343,13 @@ function formatDay(value) {
                   <td class="px-3 py-2 whitespace-nowrap text-slate-600 dark:text-slate-300">
                     {{ formatDay(ca.valid_until) }}
                   </td>
+                  <td class="px-3 py-2">
+                    <DownloadMenu
+                      :certificate="ca"
+                      :has-key="ca.has_key !== false"
+                      @choose="(format) => downloads.run(ca, format)"
+                    />
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -359,11 +358,13 @@ function formatDay(value) {
       </div>
     </section>
   </div>
-  <VaultUnlockDialog
-    :open="unlockOpen"
-    :busy="busy"
-    :reason="unlockReason"
-    @close="unlockOpen = false"
-    @unlocked="onUnlocked"
+  <ExportDialog
+    :open="!!downloads.pendingFormat.value"
+    :certificate="downloads.pendingCertificate.value"
+    :format="downloads.pendingFormat.value || ''"
+    :requires="downloads.requires(downloads.pendingFormat.value)"
+    :busy="downloads.busy.value || busy"
+    @close="downloads.cancel()"
+    @confirm="downloads.submit"
   />
 </template>

@@ -18,12 +18,15 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import BrandMark from '@/components/BrandMark.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import FeedbackMessages from '@/components/FeedbackMessages.vue'
+import VaultUnlockDialog from '@/components/VaultUnlockDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toasts'
+import { useVaultStore } from '@/stores/vault'
 
 const { t, locale } = useI18n()
 const auth = useAuthStore()
 const toasts = useToastStore()
+const vault = useVaultStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -276,5 +279,17 @@ watch(locale, () => {
         </footer>
       </main>
     </div>
+
+    <!-- One unlock dialog for the whole application. Any operation that needs a
+         private key can hit a locked vault -- signing, exporting, rotating --
+         and they all funnel through the store, so no page has to carry its own
+         open/retry bookkeeping. -->
+    <VaultUnlockDialog
+      :open="!!vault.unlockRequest"
+      :busy="vault.loading"
+      :reason="vault.unlockRequest?.reason || ''"
+      @close="vault.clearUnlock()"
+      @unlocked="vault.resolveUnlock()"
+    />
   </div>
 </template>

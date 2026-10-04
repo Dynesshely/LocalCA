@@ -12,6 +12,8 @@ export const useAuthStore = defineStore('auth', () => {
   const ready = ref(false)
   const revocationReasons = ref([])
   const maxValidityDays = ref({ root: 7300, intermediate: 7300, leaf: 825 })
+  /** What /api/download/ can produce; the card menu is built from this. */
+  const downloadFormats = ref([])
 
   const isAuthenticated = computed(() => !!user.value)
   const isStaff = computed(() => !!user.value?.is_staff)
@@ -37,6 +39,7 @@ export const useAuthStore = defineStore('auth', () => {
       if (payload.max_validity_days) {
         maxValidityDays.value = payload.max_validity_days
       }
+      downloadFormats.value = payload.download_formats || []
     } catch (err) {
       // Metadata is a nicety; the forms fall back to their own defaults.
     }
@@ -68,5 +71,6 @@ export const useAuthStore = defineStore('auth', () => {
     user, loading, ready, revocationReasons, maxValidityDays,
     isAuthenticated, isStaff,
     load, loadMeta, login, logout, changePassword,
+    downloadFormats,
   }
 })

@@ -1,11 +1,14 @@
 <script setup>
 /**
- * Language switch, as a two-option segmented control.
+ * Language switch, as a styled combo box.
  *
- * A segmented control rather than a dropdown because there are exactly two
- * locales: one click instead of two, and the current language is visible without
- * opening anything. Each option is labelled in its own language, which is the
- * only label a reader who cannot read the current interface language can act on.
+ * A native `<select>` rather than a custom popup: it is reachable by keyboard,
+ * announced correctly, and its popup is drawn by the platform, which is the
+ * behaviour a reader switching language expects. The globe stays in front of it
+ * because a bare two-letter word does not say "this changes the language".
+ *
+ * Each option carries `lang` so it is rendered in its own script, which is the
+ * only label a reader who cannot read the current interface can act on.
  */
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
@@ -16,39 +19,41 @@ import AppIcon from '@/components/AppIcon.vue'
 const { t, locale } = useI18n()
 const toasts = useToastStore()
 
-const current = computed(() => locale.value)
-
-function choose(code) {
-  if (code === current.value) {
-    return
-  }
-  setLocale(code)
-  toasts.info(t('common.language.switched', { language: t(`common.language.name.${code}`) }))
-}
+const current = computed({
+  get: () => locale.value,
+  set: (code) => {
+    if (code === locale.value) {
+      return
+    }
+    setLocale(code)
+    toasts.info(t('common.language.switched', { language: t(`common.language.name.${code}`) }))
+  },
+})
 </script>
 
 <template>
   <div
-    class="flex items-center gap-0.5 rounded-lg bg-slate-100 p-0.5 dark:bg-slate-800"
-    role="group"
-    :aria-label="t('common.language.label')"
-    data-testid="language-switcher"
+    class="relative flex items-center rounded-lg border border-slate-200 bg-white text-slate-600 transition focus-within:border-brand-400 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
   >
-    <AppIcon name="globe" class="ml-1 size-4 text-slate-400 dark:text-slate-500" />
-    <button
-      v-for="option in SUPPORTED_LOCALES"
-      :key="option.code"
-      type="button"
-      class="rounded-md px-2.5 py-1 text-xs font-medium transition"
-      :class="option.code === current
-        ? 'bg-white text-brand-700 shadow-sm dark:bg-slate-700 dark:text-white'
-        : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100'"
-      :aria-pressed="option.code === current"
-      :lang="option.htmlLang"
-      :data-testid="`locale-${option.code}`"
-      @click="choose(option.code)"
+    <AppIcon
+      name="globe"
+      class="pointer-events-none absolute left-2.5 size-4 text-slate-400 dark:text-slate-500"
+    />
+    <select
+      v-model="current"
+      :aria-label="t('common.language.label')"
+      class="w-full cursor-pointer appearance-none rounded-lg bg-transparent py-2 pr-8 pl-8 text-sm font-medium focus:outline-none"
+      data-testid="language-switcher"
     >
-      {{ option.label }}
-    </button>
+      <option v-for="option in SUPPORTED_LOCALES" :key="option.code" :value="option.code" :lang="option.htmlLang">
+        {{ option.label }}
+      </option>
+    </select>
+    <!-- The select's own arrow is hidden by `appearance-none`, so draw one that
+         matches the rest of the chrome. -->
+    <AppIcon
+      name="chevronDown"
+      class="pointer-events-none absolute right-2 size-4 text-slate-400 dark:text-slate-500"
+    />
   </div>
 </template>

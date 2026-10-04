@@ -33,6 +33,16 @@ export class ApiError extends Error {
     this.fieldErrors = this.payload.field_errors || {}
   }
 
+  /**
+   * True when the server refused because the vault is locked.
+   *
+   * The answer to this is always the same -- unlock, then repeat -- so it is
+   * worth recognising in one place instead of matching the payload everywhere.
+   */
+  get vaultLocked() {
+    return this.status === 409 && this.payload?.vault_locked === true
+  }
+
   /** The first validation message for a field, or an empty string. */
   fieldError(name) {
     const messages = this.fieldErrors[name]
@@ -115,10 +125,19 @@ export async function request(path, options = {}) {
 export async function download(path, fallbackName = 'download', body) {
   const init = { method: body ? 'POST' : 'GET', credentials: 'same-origin' }
   if (body) {
-    init.body = body
+    // The same body rules as `request`: a plain object goes as JSON, a FormData
+    // goes as multipart and lets the browser set its own boundary. Accepting
+    // only FormData here meant an object body reached the server as the string
+    // "[object Object]", and every such download came back as a 400.
+    if (body instanceof FormData) {
+      init.body = body
+    } else {
+      init.headers = { 'Content-Type': 'application/json' }
+      init.body = JSON.stringify(body)
+    }
     const token = readCookie('csrftoken')
     if (token) {
-      init.headers = { 'X-CSRFToken': token }
+      init.headers = { ...(init.headers || {}), 'X-CSRFToken': token }
     }
   }
 

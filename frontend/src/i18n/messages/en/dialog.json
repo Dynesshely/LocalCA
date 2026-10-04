@@ -40,19 +40,27 @@
       "submit": "Unlock",
       "error": "Could not open the vault."
     },
-    "p12": {
-      "title": "Download PKCS12",
-      "intro": "Export {name} and its private key as a single {extension} bundle.",
+    "export": {
+      "title": {
+        "protected": "Export an encrypted private key",
+        "unprotected": "Export an unprotected private key"
+      },
+      "intro": "Download {name} as {format}.",
       "importantLead": "Important:",
-      "warning": "{lead} note the password down. It cannot be recovered; if you forget it you will have to export the bundle again.",
-      "passwordNote": "The export password is required: the bundle contains a private key and is never written to disk unencrypted.",
+      "passwordWarning": "{lead} note the password down. It cannot be recovered; if you forget it you will have to export again.",
       "passwordLabel": "Export password",
-      "passwordPlaceholder": "At least 8 characters",
+      "passwordPlaceholder": "Use at least 8 characters.",
       "passwordTooShort": "Use at least 8 characters.",
+      "unprotectedLead": "No password:",
+      "unprotectedWarning": "{lead} this file contains the private key in the clear. Anyone who reads it can impersonate every service using this certificate. Keep it readable only by the service that needs it, and never commit it or email it.",
+      "unprotectedConfirm": "I understand this file is not encrypted, and I will store it accordingly.",
+      "submit": {
+        "protected": "Export",
+        "unprotected": "Export unprotected"
+      },
+      "preparing": "Preparing…",
       "show": "Show",
-      "hide": "Hide",
-      "preparing": "Preparing...",
-      "download": "Download"
+      "hide": "Hide"
     }
   }
 }

@@ -58,6 +58,36 @@
     "tree": {
       "emptyLeaves": "No leaf certificates signed by this intermediate yet.",
       "emptyIntermediates": "No intermediate CAs signed by this root yet."
+    },
+    "download": {
+      "label": "Download",
+      "group": {
+        "certificate": "Certificate",
+        "privateKey": "Private key"
+      },
+      "keyBadge": "key",
+      "success": "Downloaded {name}.",
+      "unlockReason": "Downloading the private key of {name} needs the vault open.",
+      "format": {
+        "pem": "Certificate (PEM)",
+        "der": "Certificate (DER)",
+        "chain": "Full chain (PEM)",
+        "p7b": "Full chain (PKCS#7)",
+        "pkcs12": "PKCS#12 bundle (.p12)",
+        "key": "Private key, encrypted (.key)",
+        "key-plain": "Private key, unencrypted (.key)",
+        "pair-zip": "Certificate + key bundle (ZIP)"
+      },
+      "hint": {
+        "pem": "The certificate on its own",
+        "der": "Binary form, for Windows and Java",
+        "chain": "Certificate, intermediates and root",
+        "p7b": "The whole chain in one file",
+        "pkcs12": "Certificate and key in one password-protected file",
+        "key": "PKCS#8, protected by a password you choose",
+        "key-plain": "PKCS#8, no password — for nginx and friends",
+        "pair-zip": "Certificate, unencrypted key and chain together"
+      }
     }
   }
 }

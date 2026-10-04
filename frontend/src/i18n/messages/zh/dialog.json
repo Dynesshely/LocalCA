@@ -40,19 +40,27 @@
       "submit": "解锁",
       "error": "无法打开密钥库。"
     },
-    "p12": {
-      "title": "下载 PKCS12",
-      "intro": "将 {name} 及其私钥导出为单个 {extension} 捆绑包。",
-      "importantLead": "重要：",
-      "warning": "{lead}请记下这个密码。它无法找回；一旦忘记，只能重新导出捆绑包。",
-      "passwordNote": "导出密码为必填项：捆绑包内含私钥，绝不会以未加密的形式写入磁盘。",
-      "passwordLabel": "导出密码",
-      "passwordPlaceholder": "至少 8 个字符",
-      "passwordTooShort": "请使用至少 8 个字符。",
-      "show": "显示",
-      "hide": "隐藏",
+    "export": {
+      "title": {
+        "protected": "导出加密私钥",
+        "unprotected": "导出未加密私钥"
+      },
+      "intro": "将 {name} 下载为 {format}。",
+      "importantLead": "注意：",
+      "passwordWarning": "{lead}请把口令记下来。它无法找回；忘记后只能重新导出一次。",
+      "passwordLabel": "导出口令",
+      "passwordPlaceholder": "至少 8 个字符。",
+      "passwordTooShort": "至少需要 8 个字符。",
+      "unprotectedLead": "没有口令：",
+      "unprotectedWarning": "{lead}这个文件里的私钥是明文。任何读到它的人都能冒充使用该证书的全部服务。请只让需要它的服务有读权限，不要提交到仓库，也不要通过邮件发送。",
+      "unprotectedConfirm": "我明白这个文件没有加密，并会相应地保存它。",
+      "submit": {
+        "protected": "导出",
+        "unprotected": "导出未加密私钥"
+      },
       "preparing": "准备中……",
-      "download": "下载"
+      "show": "显示",
+      "hide": "隐藏"
     }
   }
 }

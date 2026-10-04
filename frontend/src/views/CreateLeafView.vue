@@ -10,7 +10,9 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import FormField from '@/components/FormField.vue'
-import VaultUnlockDialog from '@/components/VaultUnlockDialog.vue'
+import DownloadMenu from '@/components/DownloadMenu.vue'
+import ExportDialog from '@/components/ExportDialog.vue'
+import { useCertificateDownload } from '@/composables/useCertificateDownload'
 import ConfirmActionDialog from '@/components/ConfirmActionDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
@@ -25,28 +27,7 @@ const vault = useVaultStore()
 const toasts = useToastStore()
 
 const busy = ref(false)
-const unlockOpen = ref(false)
-const unlockReason = ref('')
-let retryAfterUnlock = null
-
-/** True when the server refused because the vault is closed. */
-function isVaultLocked(err) {
-  return err instanceof ApiError && err.status === 409 && err.payload?.vault_locked
-}
-
-function askToUnlock(reason, retry) {
-  unlockReason.value = reason
-  retryAfterUnlock = retry || null
-  unlockOpen.value = true
-}
-
-async function onUnlocked() {
-  unlockOpen.value = false
-  await vault.load()
-  const retry = retryAfterUnlock
-  retryAfterUnlock = null
-  if (retry) { await retry() }
-}
+const downloads = useCertificateDownload()
 
 const errors = ref([])
 const fieldErrors = ref({})
@@ -81,8 +62,9 @@ async function submit() {
     form.common_name = ''
     form.san = ''
   } catch (err) {
-    if (isVaultLocked(err)) {
-      askToUnlock(t('leaf.create.unlockReason'), submit)
+    if (err instanceof ApiError && err.vaultLocked) {
+      // The shell owns the dialog; it retries this exact call once unlocked.
+      vault.requestUnlock(t('leaf.create.unlockReason'), submit)
       return
     }
     errors.value = err instanceof ApiError ? err.errors : [String(err)]
@@ -291,7 +273,12 @@ function formatDay(value) {
                     {{ formatDay(leaf.valid_until) }}
                   </td>
                   <td class="px-3 py-2">
-                    <div class="flex flex-wrap gap-1">
+                    <div class="flex flex-wrap items-center gap-1">
+                      <DownloadMenu
+                        :certificate="leaf"
+                        :has-key="leaf.has_key !== false"
+                        @choose="(format) => downloads.run(leaf, format)"
+                      />
                       <button
                         v-if="!leaf.revocation"
                         type="button"
@@ -328,11 +315,13 @@ function formatDay(value) {
       @confirm="confirmAction"
     />
   </div>
-  <VaultUnlockDialog
-    :open="unlockOpen"
-    :busy="busy"
-    :reason="unlockReason"
-    @close="unlockOpen = false"
-    @unlocked="onUnlocked"
+  <ExportDialog
+    :open="!!downloads.pendingFormat.value"
+    :certificate="downloads.pendingCertificate.value"
+    :format="downloads.pendingFormat.value || ''"
+    :requires="downloads.requires(downloads.pendingFormat.value)"
+    :busy="downloads.busy.value || busy"
+    @close="downloads.cancel()"
+    @confirm="downloads.submit"
   />
 </template>

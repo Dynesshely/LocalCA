@@ -22,10 +22,21 @@ from django.contrib.auth.forms import PasswordChangeForm
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
 from django.http import Http404, JsonResponse
+from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
+
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.serialization import (
+    BestAvailableEncryption,
+    Encoding,
+    NoEncryption,
+    PrivateFormat,
+    pkcs7,
+)
+from cryptography import x509
 
 from .ca import CertificateAuthority
 from .forms import (
@@ -453,6 +464,9 @@ def api_meta(_request):
             'intermediate': MAX_CA_VALIDITY_DAYS,
             'leaf': MAX_LEAF_VALIDITY_DAYS,
         },
+        # The SPA renders its download menu from this list, so a format the
+        # server does not serve cannot be offered, and vice versa.
+        'download_formats': download_formats(),
         'import_formats': {
             'supported': list(importers.SUPPORTED_FORMATS),
             'unsupported': list(importers.UNSUPPORTED_FORMATS),
@@ -810,77 +824,186 @@ def api_delete_certificate(request, cert_type, cert_id):
 # downloads
 # --------------------------------------------------------------------------
 
-@require_GET
-def api_download_pem(request, serial_number):
-    '''Raw PEM file download for the public certificate or chain.'''
+#: Everything that can be downloaded, and what each format asks of the caller.
+#:
+#: The interface builds its download menu from this table (served by
+#: /api/meta/), so a format cannot exist in one place and not the other.
+#:
+#: ``access``:
+#:   public  -- the certificate, or the chain built from public certificates.
+#:              Anyone who can see the name may have the bytes; this is how a
+#:              client fetches the CA it is meant to trust.
+#:   private -- the response contains private key material.
+#:
+#: ``requires``:
+#:   password -- an export password, so the key is never written unprotected.
+#:   confirm  -- the caller must say outright that it wants the *unprotected*
+#:               form. A stray link or an accidental GET cannot produce one.
+#:
+#: Deliberate: the unprotected formats exist because real servers need them
+#: (nginx cannot read a passphrase-protected key), and refusing them just moves
+#: the same bytes through `openssl pkcs12 -nodes` on the operator's laptop. What
+#: the guards buy is that it is never accidental, always authenticated, always
+#: the owner's own key, and always in the audit log.
+DOWNLOAD_FORMATS = (
+    {'id': 'pem', 'access': 'public'},
+    {'id': 'der', 'access': 'public'},
+    {'id': 'chain', 'access': 'public'},
+    {'id': 'p7b', 'access': 'public'},
+    {'id': 'pkcs12', 'access': 'private', 'requires': 'password'},
+    {'id': 'key', 'access': 'private', 'requires': 'password'},
+    {'id': 'key-plain', 'access': 'private', 'requires': 'confirm'},
+    {'id': 'pair-zip', 'access': 'private', 'requires': 'confirm'},
+)
+
+_DOWNLOAD_BY_ID = {spec['id']: spec for spec in DOWNLOAD_FORMATS}
+
+
+def download_formats():
+    '''The download menu, as the interface needs it.'''
+    return [dict(spec) for spec in DOWNLOAD_FORMATS]
+
+
+def _download_name(cert):
+    '''The name a downloaded file is based on.'''
+    return cert.common_name if isinstance(cert, LeafCertificate) else cert.name
+
+
+def _download_kind(cert):
+    return ('root' if isinstance(cert, RootCertificate)
+            else 'intermediate' if isinstance(cert, IntermediateCertificate)
+            else 'leaf')
+
+
+def _chain_certificates(cert):
+    '''``cert`` followed by every issuer, root last.'''
+    chain = [cert]
+    if isinstance(cert, LeafCertificate):
+        intermediate = cert.signed_by_intermediate
+        chain += [intermediate, intermediate.signed_by_root]
+    elif isinstance(cert, IntermediateCertificate):
+        chain.append(cert.signed_by_root)
+    return chain
+
+
+def _file_response(content, filename, content_type, cacheable=False):
+    '''An attachment that a browser will not cache or sniff.'''
     from django.http import HttpResponse
 
-    cert = _find_by_serial(serial_number)
-    if isinstance(cert, LeafCertificate):
-        content = f'{cert.public_key}{cert.signed_by_intermediate.public_key}'
-        filename = f'{cert.common_name}_chain.pem'
-    else:
-        content = cert.public_key
-        filename = f'{certificate_display_name(cert)}.pem'
-
-    AuditLog.objects.create(
-        action='DOWNLOAD_PUBLIC_KEY',
-        performed_by=request.user if request.user.is_authenticated else None,
-        details=f'Downloaded public certificate for: {certificate_display_name(cert)}')
-
-    response = HttpResponse(content, content_type='text/plain')
+    response = HttpResponse(content, content_type=content_type)
     response['Content-Disposition'] = _attachment_disposition(filename)
     response['X-Content-Type-Options'] = 'nosniff'
+    response['Cache-Control'] = ('public, max-age=300' if cacheable else 'no-store')
     return response
 
 
-# NOTE: there is deliberately no endpoint that returns a private key as plain
-# PEM. Removing it is what makes encrypting keys at rest meaningful: otherwise a
-# single click would write the key to the browser's download directory, and the
-# stored ciphertext would protect nothing. Operators export a password-protected
-# PKCS12 bundle instead (see api_download_pkcs12).
+def _audit_download(request, cert, action, note):
+    AuditLog.objects.create(
+        action=action, performed_by=request.user if request.user.is_authenticated else None,
+        details=(f'Downloaded {note} for: {certificate_display_name(cert)} '
+                 f'(serial: {cert.serial_number})'))
 
 
-@require_http_methods(['POST'])
-def api_download_pkcs12(request, serial_number):
+def api_download(request, serial_number, download_format):
     '''
-    PKCS12 bundle (certificate + private key). Owner only.
+    Download a certificate, its chain, or its private key in a named format.
 
-    POST-only and password-protected, both deliberately:
+    One endpoint rather than one per format, because the format table above is
+    the single place that decides which of them are public and what the private
+    ones need; a second route would let those two views drift.
+    '''
+    spec = _DOWNLOAD_BY_ID.get(download_format)
+    if spec is None:
+        return api_not_found(request)
 
-    * There is no longer an endpoint that returns a private key as plain PEM.
-      Such an endpoint would undo the point of encrypting keys at rest -- one
-      click would put the key in the browser's download directory.
-    * The export password is required, so the private key inside the bundle is
-      never written to disk unencrypted. This is the password the operator will
-      be prompted for when importing the bundle.
+    try:
+        cert = _find_by_serial(serial_number)
+    except Http404:
+        return api_not_found(request)
 
-    Requires the vault to be open for this account.
+    if spec['access'] == 'public':
+        return _download_public(request, cert, spec)
+    return _download_private(request, cert, spec)
+
+
+def _download_public(request, cert, spec):
+    '''
+    Certificate material that is not secret.
+
+    Unauthenticated on purpose, and unchanged in that respect: these bytes are
+    handed to every client that has to trust this CA.
+    '''
+    name = _download_name(cert)
+    fmt = spec['id']
+
+    if fmt == 'pem':
+        content = cert.public_key
+        filename, content_type = f'{name}.pem', 'application/x-pem-file'
+        note = 'public certificate'
+    elif fmt == 'der':
+        content = x509.load_pem_x509_certificate(cert.public_key.encode()).public_bytes(
+            Encoding.DER)
+        filename, content_type = f'{name}.der', 'application/pkix-cert'
+        note = 'public certificate (DER)'
+    elif fmt == 'chain':
+        content = ''.join(node.public_key for node in _chain_certificates(cert))
+        filename, content_type = f'{name}-chain.pem', 'application/x-pem-file'
+        note = 'certificate chain'
+    elif fmt == 'p7b':
+        content = pkcs7.serialize_certificates(
+            [x509.load_pem_x509_certificate(node.public_key.encode())
+             for node in _chain_certificates(cert)],
+            Encoding.DER)
+        filename, content_type = f'{name}-chain.p7b', 'application/pkcs7-mime'
+        note = 'certificate chain (PKCS#7)'
+    else:  # pragma: no cover - the table above is the only source of formats
+        raise Http404('Unknown public download format')
+
+    _audit_download(request, cert, 'DOWNLOAD_PUBLIC_KEY', note)
+    return _file_response(content, filename, content_type, cacheable=True)
+
+
+def _download_private(request, cert, spec):
+    '''
+    Private key material: owner or staff, an open vault, and a stated intent.
+
+    Every path here calls :func:`private_key_pem`, which needs the vault to be
+    unsealed, so a locked vault is a 409 with ``vault_locked`` and the interface
+    can offer to unlock rather than showing a dead end.
     '''
     if not request.user.is_authenticated:
         return _error(_('Authentication required.'), status=401)
-
-    from django.http import HttpResponse
-
-    cert = _find_by_serial(serial_number)
-    if not is_owner(request.user, cert):
+    if not can_manage_certificate(request.user, cert):
         raise PermissionDenied('You do not have permission')
 
-    if isinstance(cert, LeafCertificate):
-        name = cert.common_name
-        ca_cert_pem = cert.signed_by_intermediate.public_key
-        kind = 'leaf'
-    else:
-        name = cert.name
-        ca_cert_pem = None
-        kind = 'root' if isinstance(cert, RootCertificate) else 'intermediate'
+    name = _download_name(cert)
+    kind = _download_kind(cert)
+    payload = _payload(request)
 
-    password = str(_payload(request).get('p12_password') or '').strip()
-    if len(password) < 8:
-        return _error(
-            _('An export password of at least 8 characters is required: the '
-              'bundle contains a private key and is never written unencrypted.'),
-            status=400)
+    if spec['id'] == 'pkcs12':
+        password = str(payload.get('p12_password') or '').strip()
+        if len(password) < 8:
+            return _error(
+                _('An export password of at least 8 characters is required: the '
+                  'bundle contains a private key and is never written unencrypted.'),
+                status=400)
+    elif spec['requires'] == 'password':
+        password = str(payload.get('key_password') or '').strip()
+        if len(password) < 8:
+            return _error(
+                _('An export password of at least 8 characters is required: the '
+                  'key is never written unencrypted without one.'),
+                status=400)
+    else:
+        # `confirm` formats: the response *is* the unprotected key, so the caller
+        # has to say so explicitly. Anything else is a 400, never a silent export.
+        if str(payload.get('confirm') or '').lower() not in ('1', 'true', 'yes', 'on'):
+            return _error(
+                _('Exporting an unprotected private key has to be confirmed: '
+                  'resend with confirm=true, or choose a password-protected '
+                  'format instead.'),
+                status=400)
+        password = None
 
     try:
         key_pem = private_key_pem(cert, kind, request.user)
@@ -891,24 +1014,68 @@ def api_download_pkcs12(request, serial_number):
     except KeyUnavailable as exc:
         return _error(str(exc), status=409)
 
-    bundle = CertificateAuthority().create_pkcs12(
-        cert_pem=cert.public_key,
-        private_key_pem=key_pem,
-        ca_cert_pem=ca_cert_pem,
-        friendly_name=name,
-        password=password,
-    )
+    if spec['id'] == 'pkcs12':
+        intermediate = (cert.signed_by_intermediate
+                        if isinstance(cert, LeafCertificate) else None)
+        bundle = CertificateAuthority().create_pkcs12(
+            cert_pem=cert.public_key,
+            private_key_pem=key_pem,
+            ca_cert_pem=intermediate.public_key if intermediate else None,
+            friendly_name=name,
+            password=password,
+        )
+        _audit_download(request, cert, 'DOWNLOAD_PKCS12',
+                        'PKCS12 bundle (encrypted)')
+        return _file_response(bundle, f'{name}.p12', 'application/x-pkcs12')
 
-    AuditLog.objects.create(
-        action='DOWNLOAD_PKCS12', performed_by=request.user,
-        details=(f'Exported PKCS12 bundle for certificate: {name} '
-                 f'(Serial: {cert.serial_number}, encrypted)'))
+    # Everything below re-encodes or packages the same key.
+    key = serialization.load_pem_private_key(key_pem.encode(), password=None)
 
-    response = HttpResponse(bundle, content_type='application/x-pkcs12')
-    response['Content-Disposition'] = _attachment_disposition(f'{name}.p12')
-    response['Cache-Control'] = 'no-store'
-    response['X-Content-Type-Options'] = 'nosniff'
-    return response
+    if spec['id'] == 'key':
+        content = key.private_bytes(
+            Encoding.PEM, PrivateFormat.PKCS8,
+            BestAvailableEncryption(password.encode()))
+        _audit_download(request, cert, 'DOWNLOAD_PRIVATE_KEY',
+                        'private key (PKCS#8, encrypted)')
+        return _file_response(content, f'{name}.key', 'application/x-pem-file')
+
+    plain = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+
+    if spec['id'] == 'key-plain':
+        _audit_download(request, cert, 'DOWNLOAD_PRIVATE_KEY',
+                        'private key (PKCS#8, UNENCRYPTED)')
+        return _file_response(plain, f'{name}.key', 'application/x-pem-file')
+
+    # pair-zip: what an operator actually pastes onto a web server. The chain is
+    # included because that is the file nginx and apache are pointed at too.
+    import io
+    import zipfile
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr(f'{name}.crt', cert.public_key)
+        archive.writestr(f'{name}.key', plain)
+        archive.writestr(
+            'chain.pem',
+            ''.join(node.public_key for node in _chain_certificates(cert)[1:]))
+        archive.writestr(
+            'README.txt',
+            f'{name}\n\n'
+            f'{name}.crt  the certificate\n'
+            f'{name}.key  its private key, NOT encrypted — keep it readable only '
+            f'by the service that uses it\n'
+            f'chain.pem   the issuing certificates, if the service wants a chain\n\n'
+            f'Downloaded from LocalCA on {timezone.now().isoformat()}\n')
+    _audit_download(request, cert, 'DOWNLOAD_PRIVATE_KEY',
+                    'certificate and UNENCRYPTED private key (ZIP)')
+    return _file_response(buffer.getvalue(), f'{name}-pair.zip', 'application/zip')
+
+
+# NOTE: the unprotected formats above exist because the operator asked for them
+# and because the alternative is `openssl pkcs12 -nodes` on a laptop, which is
+# strictly worse: no authentication, no ownership check, no audit entry. What is
+# deliberately still absent is any *unauthenticated* path to a private key, and
+# any that writes one to disk without being asked for it in so many words.
 
 
 # --------------------------------------------------------------------------
