@@ -18,6 +18,7 @@
 | D35 | 顶层 shell 挂**唯一一个**「密钥库解锁」对话框，由 vault store 驱动；各视图不再各带一份 | agent | 签名、导出、轮换都会撞上锁定状态，原来每个视图都复制一遍 open/retry 逻辑。现在 `vault.requestUnlock(reason, retry)` 一处收口，`ApiError.vaultLocked` 一处识别 |
 | D36 | 下载菜单用 **Teleport + fixed 定位**，不用 `absolute` | agent | 它所在的卡片有 `overflow-hidden`（为了圆角标题条），表格又 `overflow-auto`——`absolute` 菜单只显示第一行就被裁掉（截图已证实）。`:style` 在这里只传几何坐标，与「配色不许走 style」的约定不冲突 |
 | D37 | **管理员也导不出别人的私钥**，且这个拒绝要有自己的文案 | agent 默认 | 密钥库根密钥是**按账号**包裹的，没有托管/代管一说，用调用者自己的根密钥去解别人的密文必然失败。改之前它撞成 `Ciphertext failed authentication: wrong key or tampered data.`（409）——听起来像数据损坏，实际是权限边界。现在只对 `is_wrapped` 的证书先判归属并返回「属于其他账号」；`can_manage`（吊销/删除）保持原样，legacy 明文密钥也不受影响 |
+| D38 | 开发实例上**密钥库口令 = 账号口令**（`admin`/`alice`/`bob` 统一为 `localca-dev-pass-123`） | 用户要求 | 密钥库口令在产品里是真实存在的独立秘密（首次解锁自设、不可找回），但 scratch 实例上「三个账号三个没人记得的口令」只会把操作者锁在自己的演示数据外面——验收时就是这么被卡住的。`rewrap_root_key` 只重包根密钥，证书不用动；重建 dev 库后新账号的首次解锁也按这个值设置（D19） |
 
 > 顺带修掉一个真 bug：`api/client.js` 的 `download()` 只接受 `FormData`，传普通对象时请求体变成字符串 `"[object Object]"`，后端一律 400——**未加密私钥导出在浏览器里其实是失败的**，只有把文件真的落到磁盘才发现。现在 `download()` 与 `request()` 用同一套 body 规则。
 >
@@ -109,7 +110,7 @@
 | --- | --- | --- | --- |
 | D17 | Vite 产物改为**内容哈希**命名（`assets/[name]-[hash].js|css`） | 用户要求 | 此前产物名固定为 `app.js`，重建后浏览器仍用缓存，新界面必须硬刷新才出现；哈希后旧 URL 直接 404，不可能再命中陈旧缓存（`index.html` 由 Vite 生成并带哈希名，Django 的 `spa_index` 直接渲染它，所以不需要 manifest） |
 | D18 | README 配图全部换成 fork 后的真实界面：无头 Chrome 截取、**1920×1080**、存 `screenshots/`，并删除 4 张上游旧图 | 用户要求 | 旧图是上游 django+bootstrap 模板时代的界面，其中一张还是与本项目无关的 Safari/AdGuard 截图。新图为 `hierarchy-light`（首图）、`create-ca`、`create-leaf`、`import`、`hierarchy-dark` |
-| D19 | 截图用的演示数据建在 dev 库里：`bob` 用户 + `Homelab Root CA` → `Homelab Services Intermediate CA` → 3 张叶证书（`grafana` 已吊销）；`bob` 的密钥库口令按脚本里的常量设置（见下） | agent | 需要「私钥已加密」的真实观感；`bob` 原本没有密钥库，解锁时按设计自动创建。这批数据可以用 UI 的 Delete 清掉，不影响 `admin` 原有证书 |
+| D19 | 截图用的演示数据建在 dev 库里：**`admin`** + `Homelab Root CA` → `Homelab Services Intermediate CA` → 3 张叶证书（`grafana` 已吊销）；脚本以 staff 身份运行时**先清空整个盘面** | agent（属主 2026-10-04 由 `bob` 改为 `admin`） | 需要「私钥已加密」的真实观感。属主改成 `admin` 是因为验收者用自己登录的账号就该能直接导出私钥，不必切到第二个账号去找口令；密钥库口令见 D38。`is_staff` 时清空全部是为了**可复现**——残留别人的根，截图就变成另一张图了 |
 
 > 本轮发现一个真实的**开发流程陷阱**（已写进 README 的开发步骤）：Django 5.2 默认使用
 > **cached template loader**，依赖 autoreload 在模板文件变化时清缓存；而本项目的 devctl 命令是
