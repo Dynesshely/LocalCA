@@ -6,6 +6,7 @@ so the API layer cannot accidentally read the legacy plaintext column without
 noticing that it is doing so.
 """
 from django.db import transaction
+from django.utils.translation import gettext as _
 
 from .models import VaultRootKey
 from .vault import (
@@ -105,7 +106,7 @@ def rewrap_root_key(user_id: int, old_password: str, new_password: str) -> None:
 def root_key_for(user) -> bytes:
     '''The unsealed root key for a user, or raise VaultLocked.'''
     if not user or not user.is_authenticated:
-        raise VaultLocked('Authentication is required to use private keys.')
+        raise VaultLocked(_('Authentication is required to use private keys.'))
     return unsealed.get(user.id)
 
 
@@ -127,7 +128,7 @@ def private_key_pem(cert, kind: str, user) -> str:
             raise KeyUnavailable(str(exc)) from exc
     if cert.private_key_encrypted:
         return cert.private_key_encrypted
-    raise KeyUnavailable('This certificate has no stored private key.')
+    raise KeyUnavailable(_('This certificate has no stored private key.'))
 
 
 def store_wrapped_key(cert, kind: str, pem: str, root_key: bytes) -> None:

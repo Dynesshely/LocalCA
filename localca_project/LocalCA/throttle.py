@@ -30,6 +30,7 @@ import logging
 import time
 
 from django.core.cache import cache
+from django.utils.translation import gettext as _
 
 logger = logging.getLogger(__name__)
 
@@ -99,19 +100,21 @@ def check_login_allowed(request, username: str) -> None:
     Called before authentication so a limited request costs no password hashing.
     '''
     ip_key, user_key = _keys(request, username)
-    for key, limit, label in (
-            (ip_key, LOGIN_ATTEMPTS_PER_IP, 'address'),
-            (user_key, LOGIN_ATTEMPTS_PER_USERNAME, 'account')):
+    # One whole sentence per counter, rather than one sentence with the word
+    # "address"/"account" interpolated: a translated fragment spliced into a
+    # translated sentence cannot be reordered, and the word order differs.
+    for key, limit, label, message in (
+            (ip_key, LOGIN_ATTEMPTS_PER_IP, 'address',
+             _('Too many failed login attempts from this address. Try again later.')),
+            (user_key, LOGIN_ATTEMPTS_PER_USERNAME, 'account',
+             _('Too many failed login attempts for this account. Try again later.'))):
         if key is None:
             continue
         if _count(key) >= limit:
             ttl = cache.ttl(key) if hasattr(cache, 'ttl') else None
             retry_after = ttl if isinstance(ttl, int) and ttl > 0 else LOGIN_WINDOW_SECONDS
             logger.warning('Login rate limit hit for %s (%s)', label, key)
-            raise LoginRateLimited(
-                retry_after,
-                f'Too many failed login attempts for this {label}. '
-                f'Try again later.')
+            raise LoginRateLimited(retry_after, message)
 
 
 def record_login_failure(request, username: str) -> None:

@@ -42,6 +42,10 @@ from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs7, pkcs12
 from cryptography.x509.oid import ExtensionOID, NameOID
+from django.utils.translation import gettext as _
+# Module-level tables are built at import time, before any request has
+# selected a language, so their text has to stay lazy.
+from django.utils.translation import gettext_lazy as _lazy
 
 # --------------------------------------------------------------------------
 # Limits. Every one of these exists so a signed-in user cannot turn an upload
@@ -182,15 +186,18 @@ _KEY_LABELS = {
     'EC PRIVATE KEY': 'sec1',
     'DSA PRIVATE KEY': 'dsa',
 }
+#: PEM labels that are recognised and deliberately ignored, mapped to the
+#: sentence the user is shown. The keys are identifiers from the file and stay
+#: as they are; the values are interface copy and are translated.
 _IGNORED_LABELS = {
-    'X509 CRL': 'certificate revocation lists are not imported (LocalCA serves no CRL)',
-    'CRL': 'certificate revocation lists are not imported (LocalCA serves no CRL)',
-    'CERTIFICATE REQUEST': 'certificate requests (CSR) are not certificates; sign them instead',
-    'NEW CERTIFICATE REQUEST': 'certificate requests (CSR) are not certificates; sign them instead',
-    'OPENSSH PRIVATE KEY': 'SSH keys are not X.509 material and are not supported',
-    'SSH2 PUBLIC KEY': 'SSH keys are not X.509 material and are not supported',
-    'PGP PRIVATE KEY BLOCK': 'PGP keys are not X.509 material and are not supported',
-    'PGP PUBLIC KEY BLOCK': 'PGP keys are not X.509 material and are not supported',
+    'X509 CRL': _lazy('certificate revocation lists are not imported (LocalCA serves no CRL)'),
+    'CRL': _lazy('certificate revocation lists are not imported (LocalCA serves no CRL)'),
+    'CERTIFICATE REQUEST': _lazy('certificate requests (CSR) are not certificates; sign them instead'),
+    'NEW CERTIFICATE REQUEST': _lazy('certificate requests (CSR) are not certificates; sign them instead'),
+    'OPENSSH PRIVATE KEY': _lazy('SSH keys are not X.509 material and are not supported'),
+    'SSH2 PUBLIC KEY': _lazy('SSH keys are not X.509 material and are not supported'),
+    'PGP PRIVATE KEY BLOCK': _lazy('PGP keys are not X.509 material and are not supported'),
+    'PGP PUBLIC KEY BLOCK': _lazy('PGP keys are not X.509 material and are not supported'),
 }
 
 
@@ -363,13 +370,14 @@ def _load_private_key_pem(block: bytes, label: str, password, bundle, source):
                 private_key = serialization.load_pem_private_key(block, password=None)
             except (TypeError, ValueError):
                 bundle.add_warning(
-                    f'A private key in {source} could not be read (unsupported or damaged).')
+                    _('A private key in %(source)s could not be read '
+                      '(unsupported or damaged).') % {'source': source})
                 return None
         else:
             # Raised by cryptography when the key is encrypted and no password came.
             bundle.add_warning(
-                'An encrypted private key in this upload was skipped because no '
-                'password was provided.')
+                _('An encrypted private key in this upload was skipped because no '
+                  'password was provided.'))
             return None
     except ValueError:
         encrypted = (label == 'ENCRYPTED PRIVATE KEY'
@@ -377,11 +385,15 @@ def _load_private_key_pem(block: bytes, label: str, password, bundle, source):
                      or b'Proc-Type: 4,ENCRYPTED' in block)
         if encrypted and password_bytes:
             raise BadPassword(
-                'The password did not decrypt the encrypted private key. Check it '
-                'and try again.')
-        bundle.add_warning(
-            'A private key in this upload could not be read'
-            + (' (it is encrypted).' if encrypted else ' (unsupported or damaged).'))
+                _('The password did not decrypt the encrypted private key. Check it '
+                  'and try again.'))
+        if encrypted:
+            bundle.add_warning(_(
+                'A private key in this upload could not be read (it is encrypted).'))
+        else:
+            bundle.add_warning(_(
+                'A private key in this upload could not be read'
+                ' (unsupported or damaged).'))
         return None
     return _normalise_private_key(private_key,
                                   encrypted_in_source=(label == 'ENCRYPTED PRIVATE KEY'
@@ -393,7 +405,10 @@ def _parse_pem(data: bytes, bundle: ParsedBundle, source: str, password) -> None
     for match in _PEM_RE.finditer(data):
         label = match.group(1).decode('ascii', 'replace').strip()
         if label in _IGNORED_LABELS:
-            bundle.add_warning(f'Ignored {label} in {source}: {_IGNORED_LABELS[label]}.')
+            bundle.add_warning(
+                _('Ignored %(label)s in %(source)s: %(reason)s.')
+                % {'label': label, 'source': source,
+                   'reason': _IGNORED_LABELS[label]})
             continue
 
         # Private keys are dispatched before any base64 decoding: a traditional
@@ -409,14 +424,18 @@ def _parse_pem(data: bytes, bundle: ParsedBundle, source: str, password) -> None
         try:
             der = base64.b64decode(body, validate=True)
         except (binascii.Error, ValueError):
-            bundle.add_warning(f'Ignored a malformed {label} block in {source}.')
+            bundle.add_warning(
+                _('Ignored a malformed %(label)s block in %(source)s.')
+                % {'label': label, 'source': source})
             continue
 
         if label in _CERTIFICATE_LABELS:
             try:
                 cert = x509.load_der_x509_certificate(_first_der_object(der))
             except ValueError:
-                bundle.add_warning(f'Ignored an unreadable {label} block in {source}.')
+                bundle.add_warning(
+                    _('Ignored an unreadable %(label)s block in %(source)s.')
+                    % {'label': label, 'source': source})
                 continue
             bundle.certs.append(_build_parsed_cert(cert, source))
             continue
@@ -429,14 +448,18 @@ def _parse_pem(data: bytes, bundle: ParsedBundle, source: str, password) -> None
             bundle.certs.extend(_parse_pkcs12(der, bundle, source, password))
             continue
 
-        bundle.add_warning(f'Ignored an unsupported PEM block ({label}) in {source}.')
+        bundle.add_warning(
+            _('Ignored an unsupported PEM block (%(label)s) in %(source)s.')
+            % {'label': label, 'source': source})
 
 
 def _parse_pkcs7(der: bytes, bundle: ParsedBundle, source: str) -> list:
     try:
         certs = pkcs7.load_der_pkcs7_certificates(der)
     except ValueError:
-        bundle.add_warning(f'Ignored an unreadable PKCS#7 bundle in {source}.')
+        bundle.add_warning(
+            _('Ignored an unreadable PKCS#7 bundle in %(source)s.')
+            % {'source': source})
         return []
     return [_build_parsed_cert(cert, source) for cert in certs]
 
@@ -451,10 +474,11 @@ def _parse_pkcs12(der: bytes, bundle: ParsedBundle, source: str, password) -> li
     except ValueError as exc:
         if password_bytes:
             raise BadPassword(
-                'The password did not open the PKCS#12 bundle. Check it and try '
-                'again.') from exc
+                _('The password did not open the PKCS#12 bundle. Check it and try '
+                  'again.')) from exc
         bundle.add_warning(
-            f'The PKCS#12 bundle in {source} needs a password, so it was skipped.')
+            _('The PKCS#12 bundle in %(source)s needs a password, so it was skipped.')
+            % {'source': source})
         return []
     out = []
     if cert is not None:
@@ -465,7 +489,9 @@ def _parse_pkcs12(der: bytes, bundle: ParsedBundle, source: str, password) -> li
         bundle.keys.append(_normalise_private_key(
             key, encrypted_in_source=bool(password), source=source))
     if not out and key is None:
-        bundle.add_warning(f'The PKCS#12 bundle in {source} contained nothing usable.')
+        bundle.add_warning(
+            _('The PKCS#12 bundle in %(source)s contained nothing usable.')
+            % {'source': source})
     return out
 
 
@@ -501,8 +527,8 @@ def _parse_der(data: bytes, bundle: ParsedBundle, source: str, password) -> bool
                 private_key = None
         else:
             bundle.add_warning(
-                'An encrypted private key in this upload was skipped because no '
-                'password was provided.')
+                _('An encrypted private key in this upload was skipped because no '
+                  'password was provided.'))
             private_key = None
     except ValueError:
         private_key = None
@@ -529,23 +555,29 @@ def _parse_zip(data: bytes, bundle: ParsedBundle, source: str, password, depth: 
         entries = [info for info in archive.infolist() if not info.is_dir()]
         if len(entries) > MAX_ARCHIVE_ENTRIES:
             raise UploadTooLarge(
-                f'{source} contains {len(entries)} files; the limit is '
-                f'{MAX_ARCHIVE_ENTRIES}.')
+                _('%(source)s contains %(count)s files; the limit is %(limit)s.')
+                % {'source': source, 'count': len(entries),
+                   'limit': MAX_ARCHIVE_ENTRIES})
         total = 0
         for info in entries:
             if info.file_size > MAX_ARCHIVE_TOTAL_BYTES:
                 raise UploadTooLarge(
-                    f'{source}: {info.filename} is larger than the '
-                    f'{MAX_ARCHIVE_TOTAL_BYTES // (1024 * 1024)} MiB archive limit.')
+                    _('%(source)s: %(name)s is larger than the %(limit)s MiB '
+                      'archive limit.')
+                    % {'source': source, 'name': info.filename,
+                       'limit': MAX_ARCHIVE_TOTAL_BYTES // (1024 * 1024)})
             if info.compress_size > 0 and info.file_size / info.compress_size > MAX_ARCHIVE_RATIO:
                 raise UploadTooLarge(
-                    f'{source}: {info.filename} expands too far '
-                    f'(ratio above {MAX_ARCHIVE_RATIO}:1).')
+                    _('%(source)s: %(name)s expands too far '
+                      '(ratio above %(ratio)s:1).')
+                    % {'source': source, 'name': info.filename,
+                       'ratio': MAX_ARCHIVE_RATIO})
             total += info.file_size
             if total > MAX_ARCHIVE_TOTAL_BYTES:
                 raise UploadTooLarge(
-                    f'{source} expands to more than '
-                    f'{MAX_ARCHIVE_TOTAL_BYTES // (1024 * 1024)} MiB.')
+                    _('%(source)s expands to more than %(limit)s MiB.')
+                    % {'source': source,
+                       'limit': MAX_ARCHIVE_TOTAL_BYTES // (1024 * 1024)})
         for info in entries:
             member = archive.read(info)
             _parse_blob(member, bundle, f'{source}:{info.filename}', password, depth + 1)
@@ -582,8 +614,8 @@ def _parse_blob(data: bytes, bundle: ParsedBundle, source: str, password, depth:
         return
 
     bundle.add_error(
-        f'{source}: unrecognised format. Supported: PEM, DER, PKCS#7, PKCS#12 and '
-        'ZIP of those.')
+        _('%(source)s: unrecognised format. Supported: PEM, DER, PKCS#7, PKCS#12 and '
+          'ZIP of those.') % {'source': source})
 
 
 # --------------------------------------------------------------------------
@@ -599,27 +631,28 @@ def parse_sources(sources, password=None) -> ParsedBundle:
     '''
     bundle = ParsedBundle()
     if not sources:
-        raise UnusableUpload('No files were uploaded.')
+        raise UnusableUpload(_('No files were uploaded.'))
     if len(sources) > MAX_FILES:
         raise UploadTooLarge(
-            f'{len(sources)} files were uploaded; the limit is {MAX_FILES}.')
+            _('%(count)s files were uploaded; the limit is %(limit)s.')
+            % {'count': len(sources), 'limit': MAX_FILES})
 
     total = 0
     for name, data in sources:
         if len(data) > MAX_FILE_BYTES:
             raise UploadTooLarge(
-                f'{name} is larger than the {MAX_FILE_BYTES // 1024} KiB per-file '
-                'limit.')
+                _('%(name)s is larger than the %(limit)s KiB per-file limit.')
+                % {'name': name, 'limit': MAX_FILE_BYTES // 1024})
         total += len(data)
         if total > MAX_TOTAL_BYTES:
             raise UploadTooLarge(
-                f'The upload exceeds the {MAX_TOTAL_BYTES // (1024 * 1024)} MiB '
-                'total limit.')
+                _('The upload exceeds the %(limit)s MiB total limit.')
+                % {'limit': MAX_TOTAL_BYTES // (1024 * 1024)})
         _parse_blob(data, bundle, name, password, 0)
         if len(bundle.certs) + len(bundle.keys) > MAX_OBJECTS:
             raise UploadTooLarge(
-                f'More than {MAX_OBJECTS} certificates and keys were found in this '
-                'submission.')
+                _('More than %(limit)s certificates and keys were found in this '
+                  'submission.') % {'limit': MAX_OBJECTS})
 
     # Deduplicate: the same certificate often appears twice in a chain (leaf's
     # issuer is also the bundle's intermediate).
@@ -646,8 +679,8 @@ def parse_sources(sources, password=None) -> ParsedBundle:
     # warnings to tell the operator what to do. Only silence is a hard failure.
     if not bundle.certs and not bundle.keys and not bundle.warnings:
         raise UnusableUpload(
-            'Nothing could be parsed from this upload. Supported formats: '
-            + '; '.join(SUPPORTED_FORMATS) + '.')
+            _('Nothing could be parsed from this upload. Supported formats: '
+              '%(formats)s.') % {'formats': '; '.join(SUPPORTED_FORMATS)})
     return bundle
 
 
@@ -659,13 +692,14 @@ def parse_uploads(uploads, password=None) -> ParsedBundle:
         data = upload.read()
         if len(data) > MAX_FILE_BYTES:
             raise UploadTooLarge(
-                f'{getattr(upload, "name", "a file")} is larger than the '
-                f'{MAX_FILE_BYTES // 1024} KiB per-file limit.')
+                _('%(name)s is larger than the %(limit)s KiB per-file limit.')
+                % {'name': getattr(upload, 'name', 'a file'),
+                   'limit': MAX_FILE_BYTES // 1024})
         total += len(data)
         if total > MAX_TOTAL_BYTES:
             raise UploadTooLarge(
-                f'The upload exceeds the {MAX_TOTAL_BYTES // (1024 * 1024)} MiB '
-                'total limit.')
+                _('The upload exceeds the %(limit)s MiB total limit.')
+                % {'limit': MAX_TOTAL_BYTES // (1024 * 1024)})
         sources.append((getattr(upload, 'name', 'upload'), data))
     return parse_sources(sources, password=password)
 

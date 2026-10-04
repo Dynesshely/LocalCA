@@ -2,14 +2,19 @@
 /**
  * Sign in. Uses the session API; on success the router returns the user to
  * wherever they were headed (the guard records it as ?next=).
+ *
+ * The page heading lives in the shell's top bar (`auth.login.title`), so the
+ * card holds nothing but the form.
  */
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import FormField from '@/components/FormField.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toasts'
 import { ApiError } from '@/api/client'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const toasts = useToastStore()
 const route = useRoute()
@@ -29,7 +34,7 @@ async function submit() {
   busy.value = true
   try {
     const user = await auth.login(username.value, password.value)
-    toasts.success(`Signed in as ${user.username}.`)
+    toasts.success(t('common.nav.signedInAs', { username: user.username }))
     const next = typeof route.query.next === 'string' ? route.query.next : '/'
     router.push(next)
   } catch (err) {
@@ -41,15 +46,14 @@ async function submit() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-md">
-    <div class="rounded-xl border shadow-sm" :style="{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }">
-      <h1 class="rounded-t-xl px-4 py-3 text-base font-semibold text-white" :style="{ backgroundColor: 'var(--color-brand-800)' }">
-        Login
-      </h1>
-      <form class="space-y-4 px-4 py-5" @submit.prevent="submit">
+  <div class="mx-auto flex min-h-full w-full max-w-[1400px] items-center justify-center py-10">
+    <div
+      class="w-full max-w-md overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+    >
+      <form class="space-y-4 px-5 py-5" @submit.prevent="submit">
         <p
           v-if="error"
-          class="rounded border-l-4 border-red-500 bg-red-50 px-3 py-2 text-sm text-red-900 dark:bg-red-950/50 dark:text-red-200"
+          class="rounded-lg border-l-4 border-red-500 bg-red-50 px-3 py-2 text-sm text-red-900 dark:bg-red-950/40 dark:text-red-200"
           role="alert"
         >
           {{ error }}
@@ -58,7 +62,7 @@ async function submit() {
         <FormField
           id="id_username"
           v-model="username"
-          label="Username"
+          :label="t('auth.login.username')"
           required
           autocomplete="username"
           autofocus
@@ -66,7 +70,7 @@ async function submit() {
         <FormField
           id="id_password"
           v-model="password"
-          label="Password"
+          :label="t('auth.login.password')"
           type="password"
           required
           autocomplete="current-password"
@@ -74,12 +78,11 @@ async function submit() {
 
         <button
           type="submit"
-          class="w-full rounded px-4 py-2 text-sm font-medium text-white transition disabled:opacity-60"
-          :style="{ backgroundColor: 'var(--color-brand-700)' }"
+          class="w-full rounded-lg bg-moss-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-moss-500 disabled:cursor-not-allowed disabled:opacity-60"
           :disabled="busy || !canSubmit"
           data-testid="login-submit"
         >
-          {{ busy ? 'Signing in...' : 'Login' }}
+          {{ busy ? t('auth.login.submitting') : t('auth.login.submit') }}
         </button>
       </form>
     </div>

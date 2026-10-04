@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from django.db import transaction
+from django.utils.translation import gettext as _
 
 from . import keys
 from .importers import describe_cert
@@ -288,7 +289,8 @@ def _parent_label(parent_kind, parent_obj) -> str:
     if parent_obj is None:
         return ''
     label = _stored_name(parent_obj)
-    return f'{KIND_LABELS.get(parent_kind, parent_kind)} "{label}"'
+    kind_label = KIND_LABELS.get(parent_kind, parent_kind)
+    return _('%(kind)s "%(name)s"') % {'kind': kind_label, 'name': label}
 
 
 # --------------------------------------------------------------------------
@@ -337,10 +339,10 @@ def plan_import(bundle, user, overrides: dict = None) -> ImportPlan:
         existing_serial = serial_map.get(cert.serial_number)
         if existing_serial and existing_serial[0] != cert.fingerprint:
             item.action = CONFLICT
-            item.reason = (
-                f'Serial number {cert.serial_number} is already used by a different '
-                'certificate. Serial numbers are unique across this application, so '
-                'this one has to be resolved by hand.')
+            item.reason = _(
+                'Serial number %(serial)s is already used by a different certificate. '
+                'Serial numbers are unique across this application, so this one has to '
+                'be resolved by hand.') % {'serial': cert.serial_number}
             continue
         serial_map[cert.serial_number] = (cert.fingerprint, None)
 
@@ -370,10 +372,11 @@ def plan_import(bundle, user, overrides: dict = None) -> ImportPlan:
 
     for spki, key in keys_by_spki.items():
         if spki not in paired_keys:
-            plan.key_warnings.append(
-                f'A private key from {key.source} does not match any certificate in '
-                'this upload, so it was not imported. Include the certificate with its '
-                'key, or import the pair from a PKCS#12 bundle.')
+            plan.key_warnings.append(_(
+                'A private key from %(source)s does not match any certificate in '
+                'this upload, so it was not imported. Include the certificate with '
+                'its key, or import the pair from a PKCS#12 bundle.')
+                % {'source': key.source})
 
     return plan
 
@@ -382,7 +385,7 @@ def _classify(item, cert, kind, index, same_kind, user) -> None:
     '''Set the action, the parent reference and the reason for one certificate.'''
     if cert.is_self_signed and not cert.is_ca:
         item.action = UNSUPPORTED
-        item.reason = (
+        item.reason = _(
             'A self-signed end-entity certificate does not fit the root / '
             'intermediate / leaf hierarchy, and signing with it would be unsafe.')
         return
@@ -394,11 +397,11 @@ def _classify(item, cert, kind, index, same_kind, user) -> None:
         item.existing_id = obj.id
         if item.key is not None and not obj.private_key_wrapped and not obj.private_key_encrypted:
             item.action = ATTACH_KEY
-            item.reason = ('Already present, but stored without a private key: the key '
-                           'from this upload will be added to it.')
+            item.reason = _('Already present, but stored without a private key: the '
+                            'key from this upload will be added to it.')
         else:
             item.action = SKIP
-            item.reason = 'Already present in this application.'
+            item.reason = _('Already present in this application.')
         return
 
     if kind == 'root':
@@ -410,22 +413,25 @@ def _classify(item, cert, kind, index, same_kind, user) -> None:
 
     if ambiguous:
         item.action = CONFLICT
-        item.reason = ('More than one stored certificate could be the issuer of this '
-                       'one (the same subject exists more than once), so the parent '
-                       'cannot be chosen automatically.')
+        item.reason = _(
+            'More than one stored certificate could be the issuer of this one (the '
+            'same subject exists more than once), so the parent cannot be chosen '
+            'automatically.')
         return
 
     if parent_ref is None:
         if kind == 'leaf' and root_issuer:
             item.action = UNSUPPORTED
-            item.reason = ('This end-entity certificate was issued directly by a root '
-                           'CA. A leaf in this application must hang off an intermediate '
-                           'CA, so it cannot be stored as it is.')
+            item.reason = _(
+                'This end-entity certificate was issued directly by a root CA. A leaf '
+                'in this application must hang off an intermediate CA, so it cannot be '
+                'stored as it is.')
         else:
             item.action = CONFLICT
-            item.reason = (f'The issuing {KIND_LABELS[want]} is neither in this upload '
-                           f'nor in this application. Import it as well, or import a '
-                           f'bundle that contains the whole chain.')
+            item.reason = _(
+                'The issuing %(kind)s is neither in this upload nor in this '
+                'application. Import it as well, or import a bundle that contains the '
+                'whole chain.') % {'kind': KIND_LABELS[want]}
         return
 
     item.parent = parent_ref
@@ -436,8 +442,10 @@ def _classify(item, cert, kind, index, same_kind, user) -> None:
                 and owner_id != getattr(user, 'id', None)
                 and not getattr(user, 'is_staff', False)):
             item.action = CONFLICT
-            item.reason = (f'The issuing {KIND_LABELS[parent_ref[1]]} belongs to another '
-                           f'account. Only its owner, or an administrator, can extend it.')
+            item.reason = _(
+                'The issuing %(kind)s belongs to another account. Only its owner, '
+                'or an administrator, can extend it.'
+            ) % {'kind': KIND_LABELS[parent_ref[1]]}
 
 
 def _apply_overrides(item, overrides: dict) -> None:
@@ -451,7 +459,7 @@ def _apply_overrides(item, overrides: dict) -> None:
     action = override.get('action')
     if action in OVERRIDABLE_ACTIONS and item.action == CREATE:
         item.action = action
-        item.reason = 'Skipped at your request.'
+        item.reason = _('Skipped at your request.')
 
 
 def _resolve_import_parents(plan, item_by_fingerprint) -> None:
@@ -467,10 +475,11 @@ def _resolve_import_parents(plan, item_by_fingerprint) -> None:
         parent_item = item_by_fingerprint.get(item.parent[1])
         if parent_item is None:
             item.action = CONFLICT
-            item.reason = 'The issuing certificate is missing from the upload.'
+            item.reason = _('The issuing certificate is missing from the upload.')
             continue
-        label = (f'{KIND_LABELS[parent_item.kind]} '
-                 f'"{parent_item.name or parent_item.cert.common_name}"')
+        label = _('%(kind)s "%(name)s"') % {
+            'kind': KIND_LABELS[parent_item.kind],
+            'name': parent_item.name or parent_item.cert.common_name}
         if parent_item.existing_id:
             item.parent = ('existing', parent_item.kind, parent_item.existing_id)
         item.parent_label = label
@@ -507,7 +516,8 @@ def apply_plan(plan: ImportPlan, user, root_key=None) -> dict:
             summary['failed'].append({
                 'fingerprint': item.fingerprint,
                 'name': item.name,
-                'error': 'The vault is locked, so the private key cannot be stored.',
+                'error': _(
+                    'The vault is locked, so the private key cannot be stored.'),
             })
             continue
         try:
@@ -515,7 +525,8 @@ def apply_plan(plan: ImportPlan, user, root_key=None) -> dict:
                 if item.action == ATTACH_KEY:
                     obj = MODELS[item.kind].objects.filter(pk=item.existing_id).first()
                     if obj is None:
-                        raise PlanError('The certificate disappeared while importing.')
+                        raise PlanError(
+                            _('The certificate disappeared while importing.'))
                     keys.store_wrapped_key(obj, item.kind, item.key.pem, root_key)
                     summary['keys_attached'] += 1
                 else:
@@ -550,13 +561,14 @@ def _parent_object(item, created_by_fingerprint):
     if item.parent[0] == 'import':
         obj = created_by_fingerprint.get(item.parent[1])
         if obj is None:
-            raise PlanError('The issuing certificate was not imported, so this one '
-                            'cannot be either.')
+            raise PlanError(
+                _('The issuing certificate was not imported, so this one cannot be '
+                  'either.'))
         return obj
     _source, kind, identifier = item.parent
     obj = MODELS[kind].objects.filter(pk=identifier).first()
     if obj is None:
-        raise PlanError('The issuing certificate no longer exists.')
+        raise PlanError(_('The issuing certificate no longer exists.'))
     return obj
 
 
@@ -573,11 +585,11 @@ def _create_certificate(item, user, parent_obj):
         return RootCertificate.objects.create(name=item.name, **common)
     if item.kind == 'intermediate':
         if parent_obj is None:
-            raise PlanError('An intermediate CA needs its root CA.')
+            raise PlanError(_('An intermediate CA needs its root CA.'))
         return IntermediateCertificate.objects.create(
             name=item.name, signed_by_root=parent_obj, **common)
     if parent_obj is None:
-        raise PlanError('A leaf certificate needs its intermediate CA.')
+        raise PlanError(_('A leaf certificate needs its intermediate CA.'))
     return LeafCertificate.objects.create(
         common_name=item.name, san=','.join(parsed.sans),
         signed_by_intermediate=parent_obj, **common)

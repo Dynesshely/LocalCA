@@ -22,6 +22,7 @@ from django.contrib.auth.forms import PasswordChangeForm
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
 from django.http import Http404, JsonResponse
+from django.utils.translation import gettext as _
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -108,7 +109,14 @@ def _payload(request):
 
 
 def _form_errors(form):
-    '''Flatten a bound form's errors into a list of readable strings.'''
+    '''
+    Flatten a bound form's errors into a list of readable strings.
+
+    The ``Label: message`` shape is for a human reading a response by hand. The
+    SPA does not parse it: labels are translated, so a client that matched on
+    them would break the moment the UI switched language. It reads
+    :func:`_form_field_errors` instead.
+    '''
     messages = []
     for field, errors in form.errors.items():
         for error in errors:
@@ -116,7 +124,24 @@ def _form_errors(form):
                 messages.append(str(error))
             else:
                 messages.append(f'{form.fields[field].label or field}: {error}')
-    return messages or ['The submitted data was not valid.']
+    return messages or [_('The submitted data was not valid.')]
+
+
+def _form_field_errors(form):
+    '''
+    A bound form's errors keyed by *field name* (``common_name``), not by label.
+
+    Field names are stable identifiers from the form definition, so the SPA can
+    attach a message to the input it came from without knowing either the
+    language or the wording.
+    '''
+    return {field: [str(error) for error in errors]
+            for field, errors in form.errors.items()}
+
+
+def _form_error_response(form):
+    '''400 carrying both the readable list and the per-field map.'''
+    return _error(_form_errors(form), field_errors=_form_field_errors(form))
 
 
 def _ok(payload=None, status=200):
@@ -242,12 +267,12 @@ def api_login(request):
     '''
     payload = _payload(request)
     if not payload:
-        return _error('Malformed request body.')
+        return _error(_('Malformed request body.'))
 
     username = (payload.get('username') or '').strip()
     password = payload.get('password') or ''
     if not username or not password:
-        return _error('Username and password are required.')
+        return _error(_('Username and password are required.'))
 
     try:
         throttle.check_login_allowed(request, username)
@@ -265,7 +290,7 @@ def api_login(request):
             action='ACCESS', performed_by=None,
             details=f'Failed login attempt for username: {username[:150]}')
         throttle.record_login_failure(request, username)
-        return _error('Invalid username or password.', status=401)
+        return _error(_('Invalid username or password.'), status=401)
 
     throttle.record_login_success(request, username)
     auth_login(request, user)
@@ -282,11 +307,11 @@ def api_logout(request):
 def api_change_password(request):
     '''Change the signed-in user's password.'''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
     form = PasswordChangeForm(request.user, _payload(request))
     if not form.is_valid():
-        return _error(_form_errors(form))
+        return _form_error_response(form)
 
     user = form.save()
     # Keep the current session valid after the password hash changes.
@@ -317,7 +342,7 @@ def api_vault_status(request):
     see exactly which keys the encryption does not cover.
     '''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
     status = vault_status(request.user.id)
     return _ok({
@@ -340,11 +365,14 @@ def api_vault_unseal(request):
     root key is written to the session, a cookie or the database.
     '''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
-    password, _ = _vault_payload(request)
+    # `_` is gettext in this module, so the discarded half of the pair must not
+    # be named `_`: that rebinds it to a QueryDict for the rest of the view and
+    # every later `_('...')` raises TypeError.
+    password, _ignored = _vault_payload(request)
     if not password:
-        return _error('A vault password is required.')
+        return _error(_('A vault password is required.'))
 
     try:
         ensure_root_key(request.user.id, password)
@@ -352,9 +380,9 @@ def api_vault_unseal(request):
         AuditLog.objects.create(
             action='ACCESS', performed_by=request.user,
             details='Failed vault unseal attempt')
-        return _error('The vault password is incorrect.', status=403)
+        return _error(_('The vault password is incorrect.'), status=403)
     except VaultError as exc:
-        return _error('Could not open the vault: %s' % exc)
+        return _error(_('Could not open the vault: %(error)s') % {'error': exc})
 
     AuditLog.objects.create(
         action='ACCESS', performed_by=request.user, details='Vault unsealed')
@@ -372,7 +400,7 @@ def api_vault_unseal(request):
 def api_vault_lock(request):
     '''Forget the unsealed root key immediately.'''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
     unsealed.lock(request.user.id)
     AuditLog.objects.create(
@@ -389,22 +417,23 @@ def api_vault_rotate(request):
     why the envelope design exists.
     '''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
     data = _payload(request)
     old_password = str(data.get('old_password') or '')
     new_password = str(data.get('new_password') or '')
     if not old_password or not new_password:
-        return _error('Both the current and the new vault password are required.')
+        return _error(_('Both the current and the new vault password are required.'))
     if len(new_password) < 12:
-        return _error('The new vault password must be at least 12 characters.')
+        return _error(_('The new vault password must be at least 12 characters.'))
 
     try:
         rewrap_root_key(request.user.id, old_password, new_password)
     except VaultPasswordError:
-        return _error('The current vault password is incorrect.', status=403)
+        return _error(_('The current vault password is incorrect.'), status=403)
     except VaultError as exc:
-        return _error('Could not change the vault password: %s' % exc)
+        return _error(_('Could not change the vault password: %(error)s')
+                           % {'error': exc})
 
     AuditLog.objects.create(
         action='ACCESS', performed_by=request.user,
@@ -486,7 +515,7 @@ def api_issuers(request):
     that key, and a certificate imported without one cannot sign at all.
     '''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
     roots = [root_to_dict(root, request.user)
              for root in issuers_with_key(RootCertificate, request.user)
@@ -501,7 +530,7 @@ def api_issuers(request):
 def api_my_certificates(request):
     '''The certificates this user owns, for the management tables.'''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
     revocations = _revocations_by_kind()
     user = request.user
@@ -533,7 +562,7 @@ def api_create_certificate(request, cert_type):
     request cannot consume another user's CA private key.
     '''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
     ca = CertificateAuthority()
 
@@ -544,7 +573,7 @@ def api_create_certificate(request, cert_type):
         if cert_type == 'root':
             form = RootCertificateForm(_payload(request))
             if not form.is_valid():
-                return _error(_form_errors(form))
+                return _form_error_response(form)
             name = form.cleaned_data['common_name']
             data = ca.create_root_certificate(name, form.cleaned_data['validity_days'])
             # Root keys are stored wrapped. Opening the vault here rather than
@@ -554,8 +583,9 @@ def api_create_certificate(request, cert_type):
                 root_key = root_key_for(request.user)
             except VaultLocked:
                 return _error(
-                    'Create a vault password before generating CA keys: certificate '
-                    'private keys are stored encrypted and the vault is locked.',
+                    _('Create a vault password before generating CA keys: '
+                      'certificate private keys are stored encrypted and the vault '
+                      'is locked.'),
                     status=409, vault_locked=True)
             certificate = RootCertificate.objects.create(
                 name=name,
@@ -570,14 +600,14 @@ def api_create_certificate(request, cert_type):
         elif cert_type == 'intermediate':
             form = IntermediateCertificateForm(_payload(request), user=request.user)
             if not form.is_valid():
-                return _error(_form_errors(form))
+                return _form_error_response(form)
             name = form.cleaned_data['common_name']
             root = form.cleaned_data['root_id']
             try:
                 root_key = root_key_for(request.user)
             except VaultLocked:
                 return _error(
-                    'The vault is locked. Unlock it to sign with this root CA.',
+                    _('The vault is locked. Unlock it to sign with this root CA.'),
                     status=409, vault_locked=True)
             try:
                 issuer_key = private_key_pem(root, 'root', request.user)
@@ -600,7 +630,7 @@ def api_create_certificate(request, cert_type):
         elif cert_type == 'leaf':
             form = LeafCertificateForm(_payload(request), user=request.user)
             if not form.is_valid():
-                return _error(_form_errors(form))
+                return _form_error_response(form)
             name = form.cleaned_data['common_name']
             intermediate = form.cleaned_data['intermediate_id']
             sans = form.san_list()
@@ -608,7 +638,8 @@ def api_create_certificate(request, cert_type):
                 root_key = root_key_for(request.user)
             except VaultLocked:
                 return _error(
-                    'The vault is locked. Unlock it to sign with this intermediate CA.',
+                    _('The vault is locked. Unlock it to sign with this '
+                      'intermediate CA.'),
                     status=409, vault_locked=True)
             try:
                 issuer_key = private_key_pem(intermediate, 'intermediate', request.user)
@@ -636,11 +667,11 @@ def api_create_certificate(request, cert_type):
             raise Http404('Unknown certificate kind')
 
     except ValueError as exc:
-        return _error('Could not create the certificate: %s' % exc)
+        return _error(_('Could not create the certificate: %(error)s') % {'error': exc})
     except IntegrityError:
         # Unique constraints on the name columns; the forms check first, so this
         # is a race between two concurrent submissions.
-        return _error('A certificate with that name already exists.')
+        return _error(_('A certificate with that name already exists.'))
 
     AuditLog.objects.create(
         action='CREATE', performed_by=request.user,
@@ -667,7 +698,7 @@ def api_revoke_certificate(request, cert_type, cert_id):
     cannot revoke the wrong object.
     '''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
     model = CERTIFICATE_KINDS.get(cert_type)
     if model is None:
@@ -675,9 +706,9 @@ def api_revoke_certificate(request, cert_type, cert_id):
 
     form = RevokeForm(_payload(request))
     if not form.is_valid():
-        return _error(_form_errors(form))
+        return _form_error_response(form)
     if form.cleaned_data['type'] != cert_type or form.cleaned_data['id'] != cert_id:
-        return _error('The request did not match the certificate it was sent for.')
+        return _error(_('The request did not match the certificate it was sent for.'))
 
     with transaction.atomic():
         cert = get_object_or_404(model, id=cert_id)
@@ -688,7 +719,8 @@ def api_revoke_certificate(request, cert_type, cert_id):
         name = certificate_display_name(cert)
         field = _revocation_field(cert_type)
         if RevokedCertificate.objects.filter(**{field: cert}).exists():
-            return _error(f'Certificate "{name}" is already revoked.',
+            return _error(_('Certificate "%(name)s" is already revoked.')
+                          % {'name': name},
                           status=409, already_revoked=True)
 
         RevokedCertificate.objects.create(
@@ -705,7 +737,10 @@ def api_revoke_certificate(request, cert_type, cert_id):
                 child_field = ('intermediate_certificate'
                                if isinstance(child, IntermediateCertificate)
                                else 'certificate')
-                _, created = RevokedCertificate.objects.get_or_create(
+                # The discarded half must not be called `_`: that would shadow
+                # gettext for the whole function body (Python scopes a name to
+                # the entire function), and every `_('...')` in it would raise.
+                _existing, created = RevokedCertificate.objects.get_or_create(
                     **{child_field: child},
                     defaults={
                         'created_by': request.user,
@@ -736,7 +771,7 @@ def api_delete_certificate(request, cert_type, cert_id):
     audit trail survives the cascade.
     '''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
     model = CERTIFICATE_KINDS.get(cert_type)
     if model is None:
@@ -823,7 +858,7 @@ def api_download_pkcs12(request, serial_number):
     Requires the vault to be open for this account.
     '''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
     from django.http import HttpResponse
 
@@ -843,15 +878,15 @@ def api_download_pkcs12(request, serial_number):
     password = str(_payload(request).get('p12_password') or '').strip()
     if len(password) < 8:
         return _error(
-            'An export password of at least 8 characters is required: the bundle '
-            'contains a private key and is never written unencrypted.',
+            _('An export password of at least 8 characters is required: the '
+              'bundle contains a private key and is never written unencrypted.'),
             status=400)
 
     try:
         key_pem = private_key_pem(cert, kind, request.user)
     except VaultLocked:
         return _error(
-            'The vault is locked. Unlock it to export this private key.',
+            _('The vault is locked. Unlock it to export this private key.'),
             status=409, vault_locked=True)
     except KeyUnavailable as exc:
         return _error(str(exc), status=409)
@@ -932,11 +967,11 @@ def api_import_certificates(request):
     key are stored as inventory and cannot sign or export a PKCS#12.
     '''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
 
     uploads = request.FILES.getlist('files')
     if not uploads:
-        return _error('Attach at least one file to import.')
+        return _error(_('Attach at least one file to import.'))
 
     password = (request.POST.get('password') or '').strip() or None
     dry_run = str(request.POST.get('dry_run', '0')).strip().lower() in (
@@ -945,9 +980,9 @@ def api_import_certificates(request):
     try:
         overrides = json.loads(request.POST.get('overrides') or '{}')
     except (TypeError, ValueError):
-        return _error('The overrides field must be a JSON object.')
+        return _error(_('The overrides field must be a JSON object.'))
     if not isinstance(overrides, dict):
-        return _error('The overrides field must be a JSON object.')
+        return _error(_('The overrides field must be a JSON object.'))
 
     try:
         bundle = importers.parse_uploads(uploads, password=password)
@@ -972,8 +1007,8 @@ def api_import_certificates(request):
             root_key = root_key_for(request.user)
         except VaultLocked:
             return _error(
-                'The vault is locked. Unlock it to store the private keys carried '
-                'by this import.', status=409, vault_locked=True)
+                _('The vault is locked. Unlock it to store the private keys '
+                  'carried by this import.'), status=409, vault_locked=True)
 
     result = import_service.apply_plan(plan, request.user, root_key)
     AuditLog.objects.create(
@@ -996,7 +1031,7 @@ def api_import_certificates(request):
 def api_audit_log(request):
     '''Recent audit entries. Staff only: it exposes other users' activity.'''
     if not request.user.is_authenticated:
-        return _error('Authentication required.', status=401)
+        return _error(_('Authentication required.'), status=401)
     if not request.user.is_staff:
         raise PermissionDenied('Staff access required')
 

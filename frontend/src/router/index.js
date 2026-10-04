@@ -1,35 +1,39 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { i18n } from '@/i18n'
 
 /**
  * Routes mirror the old server-side URLs so existing bookmarks keep working.
  * `meta.requiresAuth` gates pages; the guard below sends guests to /login with
  * a `next` query so they land where they intended.
+ *
+ * `meta.titleKey` names the heading in the i18n catalogues, so the top bar and
+ * the document title read in the language the reader picked.
  */
 const routes = [
   {
     path: '/',
     name: 'home',
     component: () => import('@/views/HomeView.vue'),
-    meta: { title: 'Certificate Hierarchy' },
+    meta: { titleKey: 'common.nav.home' },
   },
   {
     path: '/create/ca',
     name: 'create-ca',
     component: () => import('@/views/CreateCaView.vue'),
-    meta: { requiresAuth: true, title: 'Create CA' },
+    meta: { requiresAuth: true, titleKey: 'common.nav.createCa' },
   },
   {
     path: '/create/leaf',
     name: 'create-leaf',
     component: () => import('@/views/CreateLeafView.vue'),
-    meta: { requiresAuth: true, title: 'Create Leaf Certificate' },
+    meta: { requiresAuth: true, titleKey: 'common.nav.createLeaf' },
   },
   {
     path: '/import',
     name: 'import',
     component: () => import('@/views/ImportView.vue'),
-    meta: { requiresAuth: true, title: 'Import Certificates' },
+    meta: { requiresAuth: true, titleKey: 'common.nav.import' },
   },
   {
     // Kept for compatibility with the old template URL.
@@ -40,19 +44,19 @@ const routes = [
     path: '/login',
     name: 'login',
     component: () => import('@/views/LoginView.vue'),
-    meta: { title: 'Login' },
+    meta: { titleKey: 'auth.login.title' },
   },
   {
     path: '/change-password',
     name: 'change-password',
     component: () => import('@/views/ChangePasswordView.vue'),
-    meta: { requiresAuth: true, title: 'Change Password' },
+    meta: { requiresAuth: true, titleKey: 'common.nav.changePassword' },
   },
   {
     path: '/audit',
     name: 'audit',
     component: () => import('@/views/AuditView.vue'),
-    meta: { requiresAuth: true, requiresStaff: true, title: 'Audit Log' },
+    meta: { requiresAuth: true, requiresStaff: true, titleKey: 'common.nav.audit' },
   },
   {
     path: '/:pathMatch(.*)*',
@@ -88,9 +92,13 @@ router.beforeEach(async (to) => {
   return true
 })
 
+// `titleKey` is an i18n key, not prose: the title has to follow the language,
+// and resolving it here keeps it correct on a page load that lands directly on
+// a deep route (AppShell's watcher only fires when the locale *changes*).
 router.afterEach((to) => {
-  const title = to.meta?.title
-  document.title = title ? `${title} - Local CA` : 'Local CA'
+  const { t } = i18n.global
+  const title = to.meta?.titleKey ? t(to.meta.titleKey) : ''
+  document.title = title ? `${title} - ${t('common.app.name')}` : t('common.app.name')
 })
 
 export default router

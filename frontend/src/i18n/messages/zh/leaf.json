@@ -1,0 +1,42 @@
+{
+  "leaf": {
+    "create": {
+      "title": "签发叶证书",
+      "submit": "签发叶证书",
+      "submitting": "签发中……",
+      "success": "叶证书“{name}”签发成功。",
+      "failed": "无法签发该叶证书。",
+      "unlockReason": "签发叶证书需要先解锁密钥库。"
+    },
+    "commonName": {
+      "label": "通用名称（CN）",
+      "placeholder": "例如 example.com",
+      "help": "主要域名，同时会自动加入 SAN 列表。"
+    },
+    "san": {
+      "label": "主体备用名称（SAN）",
+      "placeholder": "www.example.com\napi.example.com\n10.0.0.7",
+      "help": "一行一个名称；也支持用逗号分隔，所以直接粘贴一行列表同样可以。可填域名或 IP 地址。"
+    },
+    "intermediate": {
+      "label": "签发用中间 CA",
+      "placeholder": "请选择中间 CA",
+      "none": "你还没有自己的中间 CA，请先到{link}页面创建一个。"
+    },
+    "validity": {
+      "label": "有效期（天）",
+      "help": "最长 {max} 天，且不得超过签发它的中间 CA 的剩余有效期。"
+    },
+    "list": {
+      "title": "你的叶证书",
+      "empty": "你还没有签发过叶证书。",
+      "commonName": "通用名称",
+      "status": "状态",
+      "signedBy": "签发者",
+      "expires": "到期时间",
+      "actions": "操作"
+    },
+    "revoked": "证书“{name}”已吊销。",
+    "deleted": "证书“{name}”已删除。"
+  }
+}

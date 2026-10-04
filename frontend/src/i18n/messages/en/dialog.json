@@ -1,0 +1,58 @@
+{
+  "dialog": {
+    "close": "Close dialog",
+    "dismiss": "Dismiss message",
+    "kind": {
+      "root": "root CA",
+      "intermediate": "intermediate CA",
+      "leaf": "leaf certificate",
+      "certificate": "certificate"
+    },
+    "revoke": {
+      "title": "Revoke certificate",
+      "prompt": "Revoke the {kind} {name}?",
+      "reasonLabel": "Revocation reason",
+      "reasonHelp": "RFC 5280 CRL reason. Recorded in the audit log.",
+      "commentLabel": "Comment",
+      "commentPlaceholder": "e.g. laptop stolen, key rotated",
+      "cascade": "Also revoke the {count} certificate(s) signed by this one",
+      "warningCa": "Revocation is recorded in this application only. It does not remove the certificate from any trust store, and there is no CRL or OCSP endpoint to publish it yet — clients will keep trusting this CA until the certificate expires or is removed from the trust store manually.",
+      "warningLeaf": "Revocation is recorded in this application only. This app publishes no CRL or OCSP endpoint yet, so already-distributed certificates keep working until they expire — pair it with removing the certificate from the relying systems."
+    },
+    "delete": {
+      "title": "Delete certificate",
+      "prompt": "Permanently delete the {kind} {name}?",
+      "confirm": "Delete permanently",
+      "warningCascade": "This deletes the private key material and {count} certificate(s) signed by it, immediately and irreversibly. If you only need to invalidate it, revoke instead.",
+      "warning": "This deletes the private key material immediately and irreversibly. This cannot be undone."
+    },
+    "vault": {
+      "title": "Unlock private keys",
+      "firstTimeIntro": "Certificate private keys are stored encrypted. Choose a {password} to protect them — this becomes the password you enter whenever LocalCA needs to sign or export a key.",
+      "intro": "Private keys are encrypted at rest. Enter your vault password to use them for signing and export.",
+      "noRecovery": "There is no recovery.",
+      "noRecoveryWarning": "{lead} If you forget this password, every private key under this account becomes permanently unreadable — including any CA key. Nobody, including an administrator, can reset it.",
+      "choosePassword": "Choose a vault password",
+      "password": "Vault password",
+      "passwordPlaceholder": "At least 8 characters",
+      "passwordHelp": "At least 8 characters. Longer is better; this guards your CA keys offline.",
+      "submitFirstTime": "Set password and unlock",
+      "submit": "Unlock",
+      "error": "Could not open the vault."
+    },
+    "p12": {
+      "title": "Download PKCS12",
+      "intro": "Export {name} and its private key as a single {extension} bundle.",
+      "importantLead": "Important:",
+      "warning": "{lead} note the password down. It cannot be recovered; if you forget it you will have to export the bundle again.",
+      "passwordNote": "The export password is required: the bundle contains a private key and is never written to disk unencrypted.",
+      "passwordLabel": "Export password",
+      "passwordPlaceholder": "At least 8 characters",
+      "passwordTooShort": "Use at least 8 characters.",
+      "show": "Show",
+      "hide": "Hide",
+      "preparing": "Preparing...",
+      "download": "Download"
+    }
+  }
+}

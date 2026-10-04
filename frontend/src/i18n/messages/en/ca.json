@@ -1,0 +1,52 @@
+{
+  "ca": {
+    "createRoot": {
+      "title": "Create Root CA",
+      "submit": "Create Root CA",
+      "submitting": "Creating...",
+      "success": "Root CA \"{name}\" created successfully.",
+      "failed": "Could not create the root CA.",
+      "unlockReason": "Generating a CA key needs the vault open."
+    },
+    "createIntermediate": {
+      "title": "Create Intermediate CA",
+      "submit": "Create Intermediate CA",
+      "submitting": "Creating...",
+      "success": "Intermediate CA \"{name}\" created successfully.",
+      "failed": "Could not create the intermediate CA.",
+      "unlockReason": "Signing an intermediate CA needs the vault open."
+    },
+    "rootName": {
+      "label": "Root CA Name",
+      "placeholder": "e.g. MyCompany Root CA",
+      "help": "Must be unique. It becomes the certificate's Common Name."
+    },
+    "intermediateName": {
+      "label": "Intermediate CA Name",
+      "placeholder": "e.g. MyCompany Intermediate CA",
+      "help": "Must be unique."
+    },
+    "validity": {
+      "label": "Validity period (days)",
+      "rootHelp": "1 to {max} days.",
+      "intermediateHelp": "Cannot outlive the signing root CA."
+    },
+    "signingRoot": {
+      "label": "Signing Root CA",
+      "placeholder": "Select a Root CA",
+      "none": "You need a root CA of your own first: signing consumes its private key, so only your own roots are listed.",
+      "help": "Only your own root CAs are listed."
+    },
+    "list": {
+      "rootsTitle": "Existing Root CAs",
+      "rootsEmpty": "No root CAs yet. Create your first one.",
+      "intermediatesTitle": "Existing Intermediate CAs",
+      "intermediatesEmpty": "No intermediate CAs yet.",
+      "name": "Name",
+      "status": "Status",
+      "expires": "Expires",
+      "owner": "Owner",
+      "signedBy": "Signed by"
+    }
+  }
+}

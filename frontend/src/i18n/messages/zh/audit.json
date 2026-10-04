@@ -1,0 +1,24 @@
+{
+  "audit": {
+    "summary": "最近 {count} 条记录。",
+    "show": "显示",
+    "empty": "暂无审计记录。",
+    "loadFailed": "无法加载审计日志：{message}",
+    "anonymous": "（匿名）",
+    "column": {
+      "when": "时间",
+      "action": "操作",
+      "by": "操作者",
+      "details": "详情"
+    },
+    "action": {
+      "create": "创建",
+      "revoke": "吊销",
+      "delete": "删除",
+      "downloadPublicKey": "下载公钥",
+      "downloadPrivateKey": "下载私钥",
+      "downloadPkcs12": "下载 PKCS#12",
+      "access": "访问"
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "import": {
+    "intro": "把已有的证书材料导入 LocalCA：带私钥的根 CA 或中间 CA、叶证书，或整条证书链。格式按内容识别，而不是按文件扩展名。",
+    "step1": {
+      "title": "1. 选择要导入的内容",
+      "chooseFiles": "选择文件",
+      "dropHint": "也可以把它们拖到这里 —— 最多 {max} 个文件，每个不超过 {size} KiB",
+      "password": {
+        "label": "加密私钥的密码",
+        "placeholder": "PKCS#12 或加密的私钥",
+        "help": "仅当上传的密钥库或私钥受密码保护时才需要填写。该密码只用于本次请求，不会被保存。"
+      }
+    },
+    "step2": {
+      "title": "2. 检查导入计划",
+      "empty": "还没有分析结果。计划会列出发现的每一张证书、它将被如何处理，以及在证书层级中的位置。"
+    },
+    "count": {
+      "create": "{count} 张待导入",
+      "attachKey": "{count} 个待添加私钥",
+      "skip": "{count} 张已存在",
+      "conflict": "{count} 张需要注意",
+      "unsupported": "{count} 张无法存储",
+      "vaultLocked": "需要先解锁密钥库"
+    },
+    "table": {
+      "certificate": "证书",
+      "type": "类型",
+      "privateKey": "私钥",
+      "parent": "上级",
+      "result": "结果",
+      "unnamed": "（未命名）",
+      "hasKey": "有（{algorithm}）",
+      "san": "主体备用名称（SAN）：{names}"
+    },
+    "action": {
+      "create": "将导入",
+      "skip": "已存在",
+      "attachKey": "添加私钥",
+      "conflict": "需要注意",
+      "unsupported": "无法存储"
+    },
+    "commit": {
+      "button": "导入 {count} 张证书",
+      "warning": "标记为“{conflict}”或“{unsupported}”的条目会被跳过；请先导入缺失的签发者，然后重新分析。"
+    },
+    "result": {
+      "created": "已创建 —— 根 CA：{root}，中间 CA：{intermediate}，叶证书：{leaf}；已封装私钥：{wrapped}，已附加私钥：{attached}，已跳过：{skipped}。",
+      "failedEntries": "{count} 条导入失败：",
+      "back": "返回证书层级"
+    },
+    "formats": {
+      "title": "可以导入的内容",
+      "unsupported": "不支持",
+      "sensitivity": "导入的私钥与生成的私钥同样敏感。如果你导入的 CA 已被客户端信任，任何能用它签名的人都能冒充那些服务；私钥只会以受密码保护的 PKCS#12 密钥库形式离开本应用。"
+    },
+    "toast": {
+      "parsed": "已解析 {count} 张证书。此时还没有写入任何内容。",
+      "imported": "证书已导入 —— 根 CA：{root}，中间 CA：{intermediate}，叶证书：{leaf}；已封装私钥：{wrapped}。",
+      "failed": "{count} 条记录无法导入。"
+    }
+  }
+}

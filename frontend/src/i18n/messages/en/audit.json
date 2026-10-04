@@ -1,0 +1,24 @@
+{
+  "audit": {
+    "summary": "Most recent {count} entries.",
+    "show": "Show",
+    "empty": "No audit entries.",
+    "loadFailed": "Could not load the audit log: {message}",
+    "anonymous": "(anonymous)",
+    "column": {
+      "when": "When",
+      "action": "Action",
+      "by": "By",
+      "details": "Details"
+    },
+    "action": {
+      "create": "Create",
+      "revoke": "Revoke",
+      "delete": "Delete",
+      "downloadPublicKey": "Download public key",
+      "downloadPrivateKey": "Download private key",
+      "downloadPkcs12": "Download PKCS#12",
+      "access": "Access"
+    }
+  }
+}

@@ -12,6 +12,7 @@
  */
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import FormField from '@/components/FormField.vue'
 import VaultUnlockDialog from '@/components/VaultUnlockDialog.vue'
 import { imports as importApi, meta as metaApi } from '@/api'
@@ -20,6 +21,7 @@ import { useCertificatesStore } from '@/stores/certificates'
 import { useVaultStore } from '@/stores/vault'
 import { useToastStore } from '@/stores/toasts'
 
+const { t } = useI18n()
 const certificates = useCertificatesStore()
 const vault = useVaultStore()
 const toasts = useToastStore()
@@ -35,20 +37,34 @@ const unlockOpen = ref(false)
 const unlockReason = ref('')
 let retryAfterUnlock = null
 
-const ACTION_LABELS = {
-  create: 'will import',
-  skip: 'already present',
-  attach_key: 'add key',
-  conflict: 'needs attention',
-  unsupported: 'cannot store',
+/**
+ * The server decides how many files a bundle may contain; the drop hint quotes
+ * those limits, so the numbers and the explanation can never drift apart.
+ */
+const maxFiles = computed(() => formats.value.limits?.max_files || 8)
+const maxFileKib = computed(() => Math.round((formats.value.limits?.max_file_bytes || 1048576) / 1024))
+
+/** Plan actions, mapped to a catalogue key so the label follows the language. */
+const ACTION_LABEL_KEYS = {
+  create: 'import.action.create',
+  skip: 'import.action.skip',
+  attach_key: 'import.action.attachKey',
+  conflict: 'import.action.conflict',
+  unsupported: 'import.action.unsupported',
 }
 
+/** Badge tint per action: a soft chip, so the plan's row states stay legible. */
 const ACTION_TONES = {
-  create: 'bg-emerald-600 text-white',
-  attach_key: 'bg-sky-600 text-white',
-  skip: 'bg-slate-500/80 text-white',
-  conflict: 'bg-amber-500 text-white',
-  unsupported: 'bg-danger text-white',
+  create: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+  attach_key: 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
+  skip: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+  conflict: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+  unsupported: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200',
+}
+
+function actionLabel(action) {
+  const key = ACTION_LABEL_KEYS[action]
+  return key ? t(key) : ''
 }
 
 const selectedNames = computed(() => files.value.map((f) => f.name))
@@ -107,7 +123,8 @@ async function analyze() {
     const payload = await importApi.analyze(files.value, { password: password.value })
     plan.value = payload.plan
     formats.value = payload.formats || formats.value
-    toasts.info(`Parsed ${payload.plan.items.length} certificate(s). Nothing has been written yet.`)
+    const parsed = payload.plan.items.length
+    toasts.info(t('import.toast.parsed', { count: parsed }, parsed))
   } catch (err) {
     plan.value = null
     reportError(err)
@@ -125,12 +142,15 @@ async function commit() {
     await certificates.load()
     await vault.load()
     const created = payload.result.created
-    toasts.success(
-      `Imported ${created.root} root, ${created.intermediate} intermediate and `
-      + `${created.leaf} leaf certificate(s); ${payload.result.keys_wrapped} key(s) wrapped.`,
-    )
+    toasts.success(t('import.toast.imported', {
+      root: created.root,
+      intermediate: created.intermediate,
+      leaf: created.leaf,
+      wrapped: payload.result.keys_wrapped,
+    }))
     if (payload.result.failed?.length) {
-      toasts.error(`${payload.result.failed.length} entry(ies) could not be imported.`)
+      const failed = payload.result.failed.length
+      toasts.error(t('import.toast.failed', { count: failed }, failed))
     }
   } catch (err) {
     if (isVaultLocked(err)) {
@@ -159,248 +179,294 @@ metaApi.get().then((payload) => {
 </script>
 
 <template>
-  <div class="space-y-6">
-    <header>
-      <h1 class="text-xl font-semibold">Import certificates</h1>
-      <p class="mt-1 text-sm" :style="{ color: 'var(--text-secondary)' }">
-        Bring existing certificate material into LocalCA: a root or intermediate CA
-        with its private key, a leaf certificate, or a whole chain. Formats are
-        recognised by content, not by file extension.
-      </p>
-    </header>
+  <div class="mx-auto w-full max-w-[1400px] space-y-6">
+    <p class="text-sm text-slate-600 dark:text-slate-300">
+      {{ t('import.intro') }}
+    </p>
 
     <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+      <!-- ------------------------------------------------------------------
+           1. Choose the files
+           ------------------------------------------------------------------ -->
       <section
-        class="rounded-lg border p-4"
-        :style="{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }"
+        class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
       >
-        <h2 class="mb-3 text-sm font-semibold">1. Choose what to import</h2>
-
-        <div
-          class="rounded border border-dashed p-4 text-center text-sm"
-          :style="{ borderColor: 'var(--border-subtle)' }"
-          data-testid="import-dropzone"
-          @dragover.prevent
-          @drop.prevent="onDrop"
-        >
-          <input
-            id="import-files"
-            type="file"
-            multiple
-            class="hidden"
-            data-testid="import-input"
-            @change="onFiles"
+        <h2 class="bg-moss-600 px-5 py-3.5 text-base font-semibold text-white">
+          {{ t('import.step1.title') }}
+        </h2>
+        <div class="px-5 py-5">
+          <div
+            class="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm dark:border-slate-700 dark:bg-slate-950/40"
+            data-testid="import-dropzone"
+            @dragover.prevent
+            @drop.prevent="onDrop"
           >
-          <button
-            type="button"
-            class="rounded bg-brand-800 px-3 py-2 text-sm font-medium text-white"
-            data-testid="import-choose"
-            @click="chooseFiles"
-          >
-            Choose files
-          </button>
-          <p class="mt-2 text-xs" :style="{ color: 'var(--text-secondary)' }">
-            or drop them here — up to {{ formats.limits?.max_files || 8 }} files,
-            {{ Math.round((formats.limits?.max_file_bytes || 1048576) / 1024) }} KiB each
-          </p>
-        </div>
+            <input
+              id="import-files"
+              type="file"
+              multiple
+              class="hidden"
+              data-testid="import-input"
+              @change="onFiles"
+            >
+            <button
+              type="button"
+              class="rounded-lg bg-moss-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-moss-500 disabled:cursor-not-allowed disabled:opacity-60"
+              data-testid="import-choose"
+              @click="chooseFiles"
+            >
+              {{ t('import.step1.chooseFiles') }}
+            </button>
+            <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+              {{ t('import.step1.dropHint', { max: maxFiles, size: maxFileKib }, maxFiles) }}
+            </p>
+          </div>
 
-        <ul v-if="selectedNames.length" class="mt-3 space-y-1 text-xs">
-          <li v-for="name in selectedNames" :key="name" class="truncate font-mono">
-            {{ name }}
-          </li>
-        </ul>
+          <ul v-if="selectedNames.length" class="mt-3 space-y-1 text-xs">
+            <li v-for="name in selectedNames" :key="name" class="truncate font-mono text-slate-600 dark:text-slate-300">
+              {{ name }}
+            </li>
+          </ul>
 
-        <div class="mt-4">
-          <FormField
-            id="import-password"
-            v-model="password"
-            label="Password for encrypted keys"
-            type="password"
-            placeholder="PKCS#12 or encrypted private key"
-            help="Only needed when a bundle or key in the upload is password protected. It is used for this request and never stored."
-          />
-        </div>
+          <div class="mt-4">
+            <FormField
+              id="import-password"
+              v-model="password"
+              :label="t('import.step1.password.label')"
+              type="password"
+              :placeholder="t('import.step1.password.placeholder')"
+              :help="t('import.step1.password.help')"
+            />
+          </div>
 
-        <div class="mt-4 flex flex-wrap gap-2">
-          <button
-            type="button"
-            class="rounded bg-brand-800 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-            :disabled="!files.length || busy"
-            data-testid="import-analyze"
-            @click="analyze"
-          >
-            Analyze
-          </button>
-          <button
-            type="button"
-            class="rounded border px-3 py-2 text-sm disabled:opacity-50"
-            :style="{ borderColor: 'var(--border-subtle)' }"
-            :disabled="busy && !files.length"
-            @click="clearAll"
-          >
-            Clear
-          </button>
+          <div class="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="rounded-lg bg-moss-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-moss-500 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="!files.length || busy"
+              data-testid="import-analyze"
+              @click="analyze"
+            >
+              {{ t('common.action.analyze') }}
+            </button>
+            <button
+              type="button"
+              class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+              :disabled="busy && !files.length"
+              @click="clearAll"
+            >
+              {{ t('common.action.clear') }}
+            </button>
+          </div>
         </div>
       </section>
 
+      <!-- ------------------------------------------------------------------
+           2. The plan the server would apply
+           ------------------------------------------------------------------ -->
       <section
-        class="rounded-lg border p-4"
-        :style="{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }"
+        class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
       >
-        <h2 class="mb-3 text-sm font-semibold">2. Review the plan</h2>
+        <h2 class="bg-brand-500 px-5 py-3.5 text-base font-semibold text-white">
+          {{ t('import.step2.title') }}
+        </h2>
+        <div class="px-5 py-5">
+          <p v-if="!plan" class="text-sm text-slate-500 dark:text-slate-400">
+            {{ t('import.step2.empty') }}
+          </p>
 
-        <p v-if="!plan" class="text-sm" :style="{ color: 'var(--text-secondary)' }">
-          Nothing analyzed yet. The plan lists every certificate found, what would
-          happen to it, and where it would sit in the hierarchy.
-        </p>
+          <template v-else>
+            <div class="mb-3 flex flex-wrap gap-2 text-xs">
+              <span
+                class="inline-block whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+              >
+                {{ t('import.count.create', { count: plan.counts.create }) }}
+              </span>
+              <span
+                v-if="plan.counts.attach_key"
+                class="inline-block whitespace-nowrap rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800 dark:bg-sky-900/40 dark:text-sky-200"
+              >
+                {{ t('import.count.attachKey', { count: plan.counts.attach_key }, plan.counts.attach_key) }}
+              </span>
+              <span
+                v-if="plan.counts.skip"
+                class="inline-block whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+              >
+                {{ t('import.count.skip', { count: plan.counts.skip }) }}
+              </span>
+              <span
+                v-if="plan.counts.conflict"
+                class="inline-block whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200"
+              >
+                {{ t('import.count.conflict', { count: plan.counts.conflict }, plan.counts.conflict) }}
+              </span>
+              <span
+                v-if="plan.counts.unsupported"
+                class="inline-block whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/40 dark:text-red-200"
+              >
+                {{ t('import.count.unsupported', { count: plan.counts.unsupported }) }}
+              </span>
+              <span
+                v-if="plan.requires_vault_unlock"
+                class="inline-block whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+              >
+                {{ t('import.count.vaultLocked') }}
+              </span>
+            </div>
 
-        <template v-else>
-          <div class="mb-3 flex flex-wrap gap-2 text-xs">
-            <span class="rounded bg-emerald-600 px-2 py-0.5 text-white">
-              {{ plan.counts.create }} to import
-            </span>
-            <span v-if="plan.counts.attach_key" class="rounded bg-sky-600 px-2 py-0.5 text-white">
-              {{ plan.counts.attach_key }} key(s) to add
-            </span>
-            <span v-if="plan.counts.skip" class="rounded bg-slate-500/80 px-2 py-0.5 text-white">
-              {{ plan.counts.skip }} already present
-            </span>
-            <span v-if="plan.counts.conflict" class="rounded bg-amber-500 px-2 py-0.5 text-white">
-              {{ plan.counts.conflict }} need attention
-            </span>
-            <span v-if="plan.counts.unsupported" class="rounded bg-danger px-2 py-0.5 text-white">
-              {{ plan.counts.unsupported }} cannot be stored
-            </span>
-            <span v-if="plan.requires_vault_unlock" class="rounded border px-2 py-0.5">
-              vault must be unlocked
-            </span>
-          </div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs" data-testid="import-plan-table">
+                <thead class="sticky top-0 bg-slate-50 text-slate-600 dark:bg-slate-950/70 dark:text-slate-300">
+                  <tr>
+                    <th class="py-2 pe-3 font-medium">{{ t('import.table.certificate') }}</th>
+                    <th class="py-2 pe-3 font-medium">{{ t('import.table.type') }}</th>
+                    <th class="py-2 pe-3 font-medium">{{ t('import.table.privateKey') }}</th>
+                    <th class="py-2 pe-3 font-medium">{{ t('import.table.parent') }}</th>
+                    <th class="py-2 font-medium">{{ t('import.table.result') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="item in plan.items"
+                    :key="item.fingerprint"
+                    class="border-t border-slate-200 align-top dark:border-slate-800"
+                    :data-import-action="item.action"
+                    :data-import-name="item.name || item.subject"
+                  >
+                    <td class="py-2 pe-3">
+                      <div class="font-medium text-slate-800 dark:text-slate-100">
+                        {{ item.name || item.subject || t('import.table.unnamed') }}
+                      </div>
+                      <div class="font-mono break-all text-slate-500 dark:text-slate-400">
+                        {{ item.fingerprint.slice(0, 16) }}…
+                      </div>
+                      <div v-if="item.sans?.length" class="break-all text-slate-500 dark:text-slate-400">
+                        {{ t('import.table.san', { names: item.sans.join(', ') }) }}
+                      </div>
+                    </td>
+                    <td class="py-2 pe-3 text-slate-600 dark:text-slate-300">{{ item.kind_label }}</td>
+                    <td class="py-2 pe-3">
+                      <span v-if="item.has_key" class="text-slate-600 dark:text-slate-300">
+                        {{ t('import.table.hasKey', { algorithm: item.key_algorithm }) }}
+                      </span>
+                      <span v-else class="text-slate-500 dark:text-slate-400">{{ t('common.state.no') }}</span>
+                    </td>
+                    <td class="py-2 pe-3 text-slate-600 dark:text-slate-300">{{ item.parent || '-' }}</td>
+                    <td class="py-2">
+                      <span
+                        class="inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
+                        :class="ACTION_TONES[item.action]"
+                      >
+                        {{ actionLabel(item.action) }}
+                      </span>
+                      <div v-if="item.reason" class="mt-1 text-slate-500 dark:text-slate-400">
+                        {{ item.reason }}
+                      </div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
 
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs" data-testid="import-plan-table">
-              <thead :style="{ color: 'var(--text-secondary)' }">
-                <tr class="border-b" :style="{ borderColor: 'var(--border-subtle)' }">
-                  <th class="py-2 pe-3">Certificate</th>
-                  <th class="py-2 pe-3">Type</th>
-                  <th class="py-2 pe-3">Private key</th>
-                  <th class="py-2 pe-3">Parent</th>
-                  <th class="py-2">Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="item in plan.items"
-                  :key="item.fingerprint"
-                  class="border-b align-top"
-                  :style="{ borderColor: 'var(--border-subtle)' }"
-                  :data-import-action="item.action"
-                  :data-import-name="item.name || item.subject"
-                >
-                  <td class="py-2 pe-3">
-                    <div class="font-medium">{{ item.name || item.subject || '(unnamed)' }}</div>
-                    <div class="font-mono break-all" :style="{ color: 'var(--text-secondary)' }">
-                      {{ item.fingerprint.slice(0, 16) }}…
-                    </div>
-                    <div v-if="item.sans?.length" class="break-all" :style="{ color: 'var(--text-secondary)' }">
-                      SAN: {{ item.sans.join(', ') }}
-                    </div>
-                  </td>
-                  <td class="py-2 pe-3">{{ item.kind_label }}</td>
-                  <td class="py-2 pe-3">
-                    <span v-if="item.has_key">yes ({{ item.key_algorithm }})</span>
-                    <span v-else :style="{ color: 'var(--text-secondary)' }">no</span>
-                  </td>
-                  <td class="py-2 pe-3">{{ item.parent || '-' }}</td>
-                  <td class="py-2">
-                    <span class="rounded px-2 py-0.5" :class="ACTION_TONES[item.action]">
-                      {{ ACTION_LABELS[item.action] }}
-                    </span>
-                    <div v-if="item.reason" class="mt-1" :style="{ color: 'var(--text-secondary)' }">
-                      {{ item.reason }}
-                    </div>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+            <div v-if="plan.errors.length" class="mt-3 space-y-1">
+              <p
+                v-for="message in plan.errors"
+                :key="message"
+                class="rounded-lg border-l-4 border-red-500 bg-red-50 px-3 py-2 text-sm text-red-900 dark:bg-red-950/40 dark:text-red-200"
+              >
+                {{ message }}
+              </p>
+            </div>
 
-          <div v-if="plan.errors.length" class="mt-3 text-xs">
-            <p
-              v-for="message in plan.errors"
-              :key="message"
-              class="rounded px-2 py-1 text-red-700 dark:text-red-300"
-              :style="{ backgroundColor: 'var(--surface-danger)' }"
-            >
-              {{ message }}
+            <div v-if="plan.warnings.length || plan.key_warnings.length" class="mt-3 space-y-1">
+              <p
+                v-for="message in [...plan.warnings, ...plan.key_warnings]"
+                :key="message"
+                class="rounded-lg border-l-4 border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+              >
+                {{ message }}
+              </p>
+            </div>
+
+            <div class="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="rounded-lg bg-moss-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-moss-500 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="busy || !writable.length"
+                data-testid="import-commit"
+                @click="commit"
+              >
+                {{ t('import.commit.button', { count: writable.length }, writable.length) }}
+              </button>
+              <span v-if="hasProblems" class="text-xs text-slate-500 dark:text-slate-400">
+                {{
+                  t('import.commit.warning', {
+                    conflict: t('import.action.conflict'),
+                    unsupported: t('import.action.unsupported'),
+                  })
+                }}
+              </span>
+            </div>
+          </template>
+
+          <div
+            v-if="result"
+            class="mt-4 rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-200"
+            data-testid="import-result"
+          >
+            <p class="font-medium">
+              {{
+                t('import.result.created', {
+                  root: result.created.root,
+                  intermediate: result.created.intermediate,
+                  leaf: result.created.leaf,
+                  wrapped: result.keys_wrapped,
+                  attached: result.keys_attached,
+                  skipped: result.skipped,
+                })
+              }}
+            </p>
+            <p v-if="result.failed.length" class="mt-1 text-red-700 dark:text-red-300">
+              {{ t('import.result.failedEntries', { count: result.failed.length }, result.failed.length) }}
+              <span v-for="failure in result.failed" :key="failure.fingerprint">
+                {{ failure.name }} ({{ failure.error }})
+              </span>
+            </p>
+            <p class="mt-2">
+              <RouterLink :to="{ name: 'home' }" class="font-medium underline">
+                {{ t('import.result.back') }}
+              </RouterLink>
             </p>
           </div>
-
-          <div v-if="plan.warnings.length || plan.key_warnings.length" class="mt-3 space-y-1 text-xs">
-            <p
-              v-for="message in [...plan.warnings, ...plan.key_warnings]"
-              :key="message"
-              class="rounded bg-amber-500/15 px-2 py-1 text-amber-800 dark:text-amber-200"
-            >
-              {{ message }}
-            </p>
-          </div>
-
-          <div class="mt-4 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-              :disabled="busy || !writable.length"
-              data-testid="import-commit"
-              @click="commit"
-            >
-              Import {{ writable.length }} certificate(s)
-            </button>
-            <span v-if="hasProblems" class="text-xs" :style="{ color: 'var(--text-secondary)' }">
-              Entries marked “needs attention” or “cannot be stored” are skipped; import the
-              missing issuer first, then analyze again.
-            </span>
-          </div>
-        </template>
-
-        <div v-if="result" class="mt-4 rounded px-3 py-2 text-xs" data-testid="import-result" :style="{ backgroundColor: 'var(--surface-sunken)' }">
-          <p class="font-medium">
-            Created: {{ result.created.root }} root,
-            {{ result.created.intermediate }} intermediate,
-            {{ result.created.leaf }} leaf — {{ result.keys_wrapped }} key(s) wrapped,
-            {{ result.keys_attached }} key(s) attached, {{ result.skipped }} skipped.
-          </p>
-          <p v-if="result.failed.length" class="mt-1 text-red-700 dark:text-red-300">
-            {{ result.failed.length }} failed:
-            <span v-for="failure in result.failed" :key="failure.fingerprint">
-              {{ failure.name }} ({{ failure.error }})
-            </span>
-          </p>
-          <p class="mt-2">
-            <RouterLink :to="{ name: 'home' }" class="underline">Back to the hierarchy</RouterLink>
-          </p>
         </div>
       </section>
     </div>
 
+    <!-- ------------------------------------------------------------------
+         What the importer accepts, straight from the server
+         ------------------------------------------------------------------ -->
     <section
-      class="rounded-lg border p-4 text-xs"
-      :style="{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }"
+      class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
     >
-      <h2 class="mb-2 text-sm font-semibold">What can be imported</h2>
-      <ul class="mb-3 list-inside list-disc space-y-1" :style="{ color: 'var(--text-secondary)' }">
-        <li v-for="item in formats.supported" :key="item">{{ item }}</li>
-      </ul>
-      <p class="mb-1 font-medium">Not supported</p>
-      <ul class="list-inside list-disc space-y-1" :style="{ color: 'var(--text-secondary)' }">
-        <li v-for="item in formats.unsupported" :key="item">{{ item }}</li>
-      </ul>
-      <p class="mt-3 rounded bg-amber-500/15 px-2 py-1 text-amber-800 dark:text-amber-200">
-        An imported private key is as sensitive as a generated one. If the CA you
-        import is already trusted by clients, whoever can sign with it can
-        impersonate those services — and private keys leave this application only
-        as a password-protected PKCS#12 bundle.
-      </p>
+      <h2 class="bg-brand-500 px-5 py-3.5 text-base font-semibold text-white">
+        {{ t('import.formats.title') }}
+      </h2>
+      <div class="px-5 py-5">
+        <ul class="mb-3 list-inside list-disc space-y-1 text-sm text-slate-600 dark:text-slate-300">
+          <li v-for="item in formats.supported" :key="item">{{ item }}</li>
+        </ul>
+        <p class="mb-1 text-sm font-medium text-slate-700 dark:text-slate-200">
+          {{ t('import.formats.unsupported') }}
+        </p>
+        <ul class="list-inside list-disc space-y-1 text-sm text-slate-600 dark:text-slate-300">
+          <li v-for="item in formats.unsupported" :key="item">{{ item }}</li>
+        </ul>
+        <p
+          class="mt-3 rounded-lg border-l-4 border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200"
+        >
+          {{ t('import.formats.sensitivity') }}
+        </p>
+      </div>
     </section>
   </div>
 

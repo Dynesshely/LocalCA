@@ -1,0 +1,42 @@
+{
+  "leaf": {
+    "create": {
+      "title": "Create Leaf Certificate",
+      "submit": "Create Leaf Certificate",
+      "submitting": "Creating...",
+      "success": "Leaf certificate “{name}” created successfully.",
+      "failed": "Could not create the leaf certificate.",
+      "unlockReason": "Signing a leaf certificate needs the vault open."
+    },
+    "commonName": {
+      "label": "Common Name",
+      "placeholder": "e.g. example.com",
+      "help": "The primary domain name. Also added to the SAN list."
+    },
+    "san": {
+      "label": "Subject Alternative Names",
+      "placeholder": "www.example.com\napi.example.com\n10.0.0.7",
+      "help": "One name per line. Commas separate too, so a pasted list works as well. Domain names or IP addresses."
+    },
+    "intermediate": {
+      "label": "Signing Intermediate CA",
+      "placeholder": "Select an Intermediate CA",
+      "none": "No intermediate CA of your own yet. Create one on the {link} page."
+    },
+    "validity": {
+      "label": "Validity period (days)",
+      "help": "Maximum {max} days, and never longer than the signing intermediate."
+    },
+    "list": {
+      "title": "Your Leaf Certificates",
+      "empty": "You have not created any leaf certificates yet.",
+      "commonName": "Common name",
+      "status": "Status",
+      "signedBy": "Signed by",
+      "expires": "Expires",
+      "actions": "Actions"
+    },
+    "revoked": "Certificate “{name}” revoked.",
+    "deleted": "Certificate “{name}” deleted."
+  }
+}

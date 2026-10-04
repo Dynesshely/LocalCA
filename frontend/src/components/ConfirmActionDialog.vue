@@ -7,6 +7,7 @@
  * certificates that will be removed with it and is irreversible.
  */
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import AppModal from '@/components/AppModal.vue'
 import { useAuthStore } from '@/stores/auth'
 
@@ -22,6 +23,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'confirm'])
 
 const auth = useAuthStore()
+const { t } = useI18n()
 
 const reason = ref('unspecified')
 const comment = ref('')
@@ -30,12 +32,13 @@ const cascade = ref(false)
 const isRevoke = computed(() => props.action === 'revoke')
 const isCa = computed(() =>
   props.certificate ? ['root', 'intermediate'].includes(props.certificate.kind) : false)
+/** The kind of thing being acted on, as a translated noun phrase. */
 const kindLabel = computed(() => {
   switch (props.certificate?.kind) {
-    case 'root': return 'root CA'
-    case 'intermediate': return 'intermediate CA'
-    case 'leaf': return 'leaf certificate'
-    default: return 'certificate'
+    case 'root': return t('dialog.kind.root')
+    case 'intermediate': return t('dialog.kind.intermediate')
+    case 'leaf': return t('dialog.kind.leaf')
+    default: return t('dialog.kind.certificate')
   }
 })
 const name = computed(() => props.certificate?.name || '')
@@ -67,55 +70,63 @@ function confirm() {
   <AppModal
     :open="open"
     :tone="isRevoke ? 'warning' : 'danger'"
-    :title="isRevoke ? 'Revoke certificate' : 'Delete certificate'"
+    :title="isRevoke ? t('dialog.revoke.title') : t('dialog.delete.title')"
     :close-on-backdrop="false"
     @close="emit('close')"
   >
-    <p class="text-sm">
-      {{ isRevoke ? 'Revoke the' : 'Permanently delete the' }}
-      {{ kindLabel }}
-      <strong class="font-semibold">{{ name }}</strong>?
-    </p>
+    <i18n-t
+      :keypath="isRevoke ? 'dialog.revoke.prompt' : 'dialog.delete.prompt'"
+      tag="p"
+      class="text-sm text-slate-600 dark:text-slate-300"
+    >
+      <template #kind>{{ kindLabel }}</template>
+      <template #name>
+        <strong class="font-semibold text-slate-900 dark:text-slate-100">{{ name }}</strong>
+      </template>
+    </i18n-t>
 
     <!-- revoke: reason, comment, optional cascade -->
     <template v-if="isRevoke">
       <div class="mt-4">
-        <label for="revoke-reason" class="mb-1 block text-sm font-medium">Revocation reason</label>
+        <label for="revoke-reason" class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+          {{ t('dialog.revoke.reasonLabel') }}
+        </label>
         <select
           id="revoke-reason"
           v-model="reason"
           data-testid="revoke-reason"
-          class="w-full rounded border px-3 py-2 text-sm"
-          :style="{ backgroundColor: 'var(--surface-sunken)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }"
+          class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
         >
           <option v-for="option in auth.revocationReasons" :key="option.value" :value="option.value">
             {{ option.label }}
           </option>
         </select>
-        <p class="mt-1 text-xs" :style="{ color: 'var(--text-secondary)' }">
-          RFC 5280 CRL reason. Recorded in the audit log.
+        <p class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+          {{ t('dialog.revoke.reasonHelp') }}
         </p>
       </div>
 
       <div class="mt-4">
-        <label for="revoke-comment" class="mb-1 block text-sm font-medium">
-          Comment <span :style="{ color: 'var(--text-secondary)' }">(optional)</span>
+        <label for="revoke-comment" class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+          {{ t('dialog.revoke.commentLabel') }}
+          <span class="font-normal text-slate-400 dark:text-slate-500">
+            ({{ t('common.state.optional') }})
+          </span>
         </label>
         <input
           id="revoke-comment"
           v-model="comment"
           type="text"
           maxlength="500"
-          placeholder="e.g. laptop stolen, key rotated"
+          :placeholder="t('dialog.revoke.commentPlaceholder')"
           data-testid="revoke-comment"
-          class="w-full rounded border px-3 py-2 text-sm"
-          :style="{ backgroundColor: 'var(--surface-sunken)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }"
+          class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
         />
       </div>
 
       <label
         v-if="isCa"
-        class="mt-4 flex items-start gap-2 text-sm"
+        class="mt-4 flex items-start gap-2 text-sm text-slate-600 dark:text-slate-300"
       >
         <input
           v-model="cascade"
@@ -124,65 +135,41 @@ function confirm() {
           data-testid="revoke-cascade"
         />
         <span>
-          Also revoke the {{ descendants }} certificate(s) signed by this one
+          {{ t('dialog.revoke.cascade', { count: descendants }) }}
         </span>
       </label>
 
-      <p
-        class="mt-4 rounded px-3 py-2 text-xs"
-        :style="{ backgroundColor: 'var(--surface-warn)', color: 'var(--text-primary)' }"
-      >
-        <template v-if="isCa">
-          Revocation is recorded in this application only. It does not remove the
-          certificate from any trust store, and there is no CRL or OCSP endpoint
-          to publish it yet &mdash; clients will keep trusting this CA until the
-          certificate expires or is removed from the trust store manually.
-        </template>
-        <template v-else>
-          Revocation is recorded in this application only. This app publishes no
-          CRL or OCSP endpoint yet, so already-distributed certificates keep
-          working until they expire &mdash; pair it with removing the certificate
-          from the relying systems.
-        </template>
+      <p class="mt-4 rounded-lg border-l-4 border-amber-500 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+        {{ isCa ? t('dialog.revoke.warningCa') : t('dialog.revoke.warningLeaf') }}
       </p>
     </template>
 
     <!-- delete: state the cascade, it cannot be undone -->
     <p
       v-else
-      class="mt-4 rounded px-3 py-2 text-xs"
-      :style="{ backgroundColor: 'var(--surface-danger)', color: 'var(--text-primary)' }"
+      class="mt-4 rounded-lg border-l-4 border-red-500 bg-red-50 px-3 py-2 text-sm text-red-900 dark:bg-red-950/40 dark:text-red-200"
     >
-      <template v-if="descendants > 0">
-        This deletes the private key material and {{ descendants }} certificate(s)
-        signed by it, immediately and irreversibly. If you only need to invalidate
-        it, revoke instead.
-      </template>
-      <template v-else>
-        This deletes the private key material immediately and irreversibly. This
-        cannot be undone.
-      </template>
+      {{ descendants > 0 ? t('dialog.delete.warningCascade', { count: descendants }) : t('dialog.delete.warning') }}
     </p>
 
     <template #footer>
       <button
         type="button"
-        class="rounded border px-3 py-2 text-sm transition"
-        :style="{ borderColor: 'var(--border-strong)', color: 'var(--text-primary)' }"
+        class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
         :disabled="busy"
         @click="emit('close')"
       >
-        Cancel
+        {{ t('common.action.cancel') }}
       </button>
       <button
         type="button"
-        class="rounded px-3 py-2 text-sm font-medium text-white transition disabled:opacity-60"
-        :style="{ backgroundColor: isRevoke ? 'var(--color-danger)' : 'var(--color-danger-strong)' }"
+        class="rounded-lg px-3 py-2 text-sm font-medium text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+        :class="isRevoke ? 'bg-red-600 hover:bg-red-500' : 'bg-red-700 hover:bg-red-600'"
         :disabled="busy"
         data-testid="confirm-action"
         @click="confirm"
       >
-        {{ busy ? 'Working...' : (isRevoke ? 'Revoke' : 'Delete permanently') }}
+        {{ busy ? t('common.state.working') : (isRevoke ? t('common.action.revoke') : t('dialog.delete.confirm')) }}
       </button>
     </template>
   </AppModal>

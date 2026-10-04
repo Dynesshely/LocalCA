@@ -1,0 +1,326 @@
+# Simplified Chinese translation of LocalCA.
+#
+# The msgid is the English source string, so a missing translation
+# degrades to English rather than to an empty label.
+#
+# Regenerate the .mo after editing:  python3 scripts/i18n.py compile
+# Verify nothing is missing:         python3 scripts/i18n.py check
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: LocalCA\n"
+"Report-Msgid-Bugs-To: https://github.com/Dynesshely/LocalCA/issues\n"
+"Language: zh_Hans\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+
+msgid "\"%(name)s\" is already in use by another certificate. Certificate names must be unique."
+msgstr "“%(name)s”已被另一张证书占用。证书名称必须唯一。"
+
+msgid "%(count)s files were uploaded; the limit is %(limit)s."
+msgstr "上传了 %(count)s 个文件，上限为 %(limit)s 个。"
+
+msgid "%(kind)s \"%(name)s\""
+msgstr "%(kind)s“%(name)s”"
+
+msgid "%(name)s is larger than the %(limit)s KiB per-file limit."
+msgstr "%(name)s 超过单个文件 %(limit)s KiB 的上限。"
+
+msgid "%(source)s contains %(count)s files; the limit is %(limit)s."
+msgstr "%(source)s 内含 %(count)s 个文件，上限为 %(limit)s 个。"
+
+msgid "%(source)s expands to more than %(limit)s MiB."
+msgstr "%(source)s 解压后超过 %(limit)s MiB。"
+
+msgid "%(source)s: %(name)s expands too far (ratio above %(ratio)s:1)."
+msgstr "%(source)s：%(name)s 的压缩比过高（超过 %(ratio)s:1）。"
+
+msgid "%(source)s: %(name)s is larger than the %(limit)s MiB archive limit."
+msgstr "%(source)s：%(name)s 超过归档 %(limit)s MiB 的上限。"
+
+msgid "%(source)s: unrecognised format. Supported: PEM, DER, PKCS#7, PKCS#12 and ZIP of those."
+msgstr "%(source)s：无法识别的格式。支持 PEM、DER、PKCS#7、PKCS#12 以及它们的 ZIP 打包。"
+
+msgid "(deleted)"
+msgstr "（已删除）"
+
+msgid "A certificate with that name already exists."
+msgstr "已存在同名证书。"
+
+msgid "A common name is required."
+msgstr "请填写通用名称。"
+
+msgid "A leaf certificate needs its intermediate CA."
+msgstr "叶证书必须挂在中间 CA 之下。"
+
+msgid "A private key from %(source)s does not match any certificate in this upload, so it was not imported. Include the certificate with its key, or import the pair from a PKCS#12 bundle."
+msgstr "%(source)s 中的私钥与本批次里的任何证书都不匹配，因此未导入。请把证书与其私钥一起提供，或改用 PKCS#12 打包导入。"
+
+msgid "A private key in %(source)s could not be read (unsupported or damaged)."
+msgstr "%(source)s 中的私钥无法读取（格式不支持或已损坏）。"
+
+msgid "A private key in this upload could not be read (it is encrypted)."
+msgstr "本次上传中的一个私钥无法读取（已加密）。"
+
+msgid "A private key in this upload could not be read (unsupported or damaged)."
+msgstr "本次上传中的一个私钥无法读取（格式不支持或已损坏）。"
+
+msgid "A self-signed end-entity certificate does not fit the root / intermediate / leaf hierarchy, and signing with it would be unsafe."
+msgstr "自签名的终端实体证书不符合根 / 中间 / 叶的三层结构，用它签发并不安全。"
+
+msgid "A validity period is required."
+msgstr "请填写有效期。"
+
+msgid "A vault password is required."
+msgstr "请输入密钥库口令。"
+
+msgid "Affiliation changed"
+msgstr "隶属关系变更"
+
+msgid "Already present in this application."
+msgstr "本应用中已存在。"
+
+msgid "Already present, but stored without a private key: the key from this upload will be added to it."
+msgstr "已存在，但当初没有存私钥：本次上传的私钥会补挂到它上面。"
+
+msgid "An encrypted private key in this upload was skipped because no password was provided."
+msgstr "本次上传中有加密私钥，因未提供口令而跳过。"
+
+msgid "An export password of at least 8 characters is required: the bundle contains a private key and is never written unencrypted."
+msgstr "必须设置至少 8 位的导出口令：导出包内含私钥，绝不会以未加密形式落盘。"
+
+msgid "An intermediate CA needs its root CA."
+msgstr "中间 CA 必须指定其根 CA。"
+
+msgid "Attach at least one file to import."
+msgstr "请至少附加一个文件再导入。"
+
+msgid "Authentication is required to use private keys."
+msgstr "使用私钥需要先登录。"
+
+msgid "Authentication required."
+msgstr "需要登录。"
+
+msgid "Both the current and the new vault password are required."
+msgstr "当前口令与新口令都必须填写。"
+
+msgid "CA compromise"
+msgstr "CA 私钥泄露"
+
+msgid "Certificate \"%(name)s\" is already revoked."
+msgstr "证书“%(name)s”已被吊销。"
+
+msgid "Certificate hold"
+msgstr "证书暂停"
+
+msgid "Cessation of operation"
+msgstr "停止运营"
+
+msgid "Common name cannot be empty."
+msgstr "通用名称不能为空。"
+
+msgid "Could not change the vault password: %(error)s"
+msgstr "无法修改密钥库口令：%(error)s"
+
+msgid "Could not create the certificate: %(error)s"
+msgstr "无法创建证书：%(error)s"
+
+msgid "Could not open the vault: %(error)s"
+msgstr "无法打开密钥库：%(error)s"
+
+msgid "Create a vault password before generating CA keys: certificate private keys are stored encrypted and the vault is locked."
+msgstr "生成 CA 密钥前请先设置密钥库口令：证书私钥以加密方式存储，而当前密钥库处于锁定状态。"
+
+msgid "Ignored %(label)s in %(source)s: %(reason)s."
+msgstr "已忽略 %(source)s 中的 %(label)s：%(reason)s。"
+
+msgid "Ignored a malformed %(label)s block in %(source)s."
+msgstr "已忽略 %(source)s 中格式错误的 %(label)s 块。"
+
+msgid "Ignored an unreadable %(label)s block in %(source)s."
+msgstr "已忽略 %(source)s 中无法读取的 %(label)s 块。"
+
+msgid "Ignored an unreadable PKCS#7 bundle in %(source)s."
+msgstr "已忽略 %(source)s 中无法读取的 PKCS#7 包。"
+
+msgid "Ignored an unsupported PEM block (%(label)s) in %(source)s."
+msgstr "已忽略 %(source)s 中不支持的 PEM 块（%(label)s）。"
+
+msgid "Intermediate CA"
+msgstr "中间 CA"
+
+msgid "Invalid username or password."
+msgstr "用户名或密码不正确。"
+
+msgid "Key compromise"
+msgstr "私钥泄露"
+
+msgid "Leaf certificate"
+msgstr "叶证书"
+
+msgid "Malformed request body."
+msgstr "请求体格式错误。"
+
+msgid "More than %(limit)s certificates and keys were found in this submission."
+msgstr "本次提交中发现超过 %(limit)s 张证书与密钥。"
+
+msgid "More than one stored certificate could be the issuer of this one (the same subject exists more than once), so the parent cannot be chosen automatically."
+msgstr "库中有多张证书都可能是它的签发者（同一主体出现多次），无法自动确定父证书。"
+
+msgid "No files were uploaded."
+msgstr "没有上传任何文件。"
+
+msgid "Nothing could be parsed from this upload. Supported formats: %(formats)s."
+msgstr "无法从本次上传中解析出任何内容。支持的格式：%(formats)s。"
+
+msgid "PGP keys are not X.509 material and are not supported"
+msgstr "PGP 密钥不属于 X.509 体系，暂不支持"
+
+msgid "Privilege withdrawn"
+msgstr "权限撤回"
+
+msgid "Root CA"
+msgstr "根 CA"
+
+msgid "Root key must be 32 bytes."
+msgstr "根密钥长度必须为 32 字节。"
+
+msgid "SSH keys are not X.509 material and are not supported"
+msgstr "SSH 密钥不属于 X.509 体系，暂不支持"
+
+msgid "Select the intermediate CA that should sign this certificate."
+msgstr "请选择签发该证书的中间 CA。"
+
+msgid "Select the root CA that should sign this certificate."
+msgstr "请选择签发该证书的根 CA。"
+
+msgid "Serial number %(serial)s is already used by a different certificate. Serial numbers are unique across this application, so this one has to be resolved by hand."
+msgstr "序列号 %(serial)s 已被另一张证书占用。本应用内序列号必须唯一，需要手动处理。"
+
+msgid "Skipped at your request."
+msgstr "按你的选择跳过。"
+
+msgid "Superseded"
+msgstr "已被替代"
+
+msgid "That intermediate CA is not available to you."
+msgstr "该中间 CA 不可用。"
+
+msgid "That root CA is not available to you."
+msgstr "该根 CA 不可用。"
+
+msgid "The PKCS#12 bundle in %(source)s contained nothing usable."
+msgstr "%(source)s 中的 PKCS#12 包里没有可用的内容。"
+
+msgid "The PKCS#12 bundle in %(source)s needs a password, so it was skipped."
+msgstr "%(source)s 中的 PKCS#12 包需要口令，已跳过。"
+
+msgid "The certificate disappeared while importing."
+msgstr "导入过程中该证书已不存在。"
+
+msgid "The current vault password is incorrect."
+msgstr "当前密钥库口令不正确。"
+
+msgid "The issuing %(kind)s belongs to another account. Only its owner, or an administrator, can extend it."
+msgstr "签发它的%(kind)s属于其他账号，只有其所有者或管理员才能在其下继续签发。"
+
+msgid "The issuing %(kind)s is neither in this upload nor in this application. Import it as well, or import a bundle that contains the whole chain."
+msgstr "签发它的%(kind)s既不在本次上传中，也不在本应用里。请一并导入它，或导入包含完整证书链的打包文件。"
+
+msgid "The issuing certificate is missing from the upload."
+msgstr "上传内容中缺少签发者证书。"
+
+msgid "The issuing certificate no longer exists."
+msgstr "签发者证书已不存在。"
+
+msgid "The issuing certificate was not imported, so this one cannot be either."
+msgstr "签发者证书未导入，因此这张也无法导入。"
+
+msgid "The new vault password must be at least 12 characters."
+msgstr "新的密钥库口令至少需要 12 个字符。"
+
+msgid "The overrides field must be a JSON object."
+msgstr "overrides 字段必须是 JSON 对象。"
+
+msgid "The password did not decrypt the encrypted private key. Check it and try again."
+msgstr "该口令未能解密加密私钥，请确认后重试。"
+
+msgid "The password did not open the PKCS#12 bundle. Check it and try again."
+msgstr "该口令无法打开 PKCS#12 包，请确认后重试。"
+
+msgid "The request did not match the certificate it was sent for."
+msgstr "请求与目标证书不匹配。"
+
+msgid "The submitted data was not valid."
+msgstr "提交的数据不合法。"
+
+msgid "The upload exceeds the %(limit)s MiB total limit."
+msgstr "上传内容超过 %(limit)s MiB 的总量上限。"
+
+msgid "The vault is locked for this account."
+msgstr "该账号的密钥库处于锁定状态。"
+
+msgid "The vault is locked, so the private key cannot be stored."
+msgstr "密钥库已锁定，无法保存私钥。"
+
+msgid "The vault is locked. Unlock it to export this private key."
+msgstr "密钥库已锁定，导出该私钥前请先解锁。"
+
+msgid "The vault is locked. Unlock it to sign with this intermediate CA."
+msgstr "密钥库已锁定，使用该中间 CA 签发前请先解锁。"
+
+msgid "The vault is locked. Unlock it to sign with this root CA."
+msgstr "密钥库已锁定，使用该根 CA 签发前请先解锁。"
+
+msgid "The vault is locked. Unlock it to store the private keys carried by this import."
+msgstr "密钥库已锁定，保存本次导入携带的私钥前请先解锁。"
+
+msgid "The vault password does not match the unlock."
+msgstr "密钥库口令与解锁时使用的不一致。"
+
+msgid "The vault password is incorrect, or the stored key was modified."
+msgstr "密钥库口令不正确，或存储的密钥已被改动。"
+
+msgid "The vault password is incorrect."
+msgstr "密钥库口令不正确。"
+
+msgid "This certificate has no stored private key."
+msgstr "这张证书没有存储私钥。"
+
+msgid "This end-entity certificate was issued directly by a root CA. A leaf in this application must hang off an intermediate CA, so it cannot be stored as it is."
+msgstr "该终端实体证书由根 CA 直接签发。本应用要求叶证书挂在中间 CA 之下，因此无法按原样保存。"
+
+msgid "Too many failed login attempts for this account. Try again later."
+msgstr "该账号的失败登录次数过多，请稍后再试。"
+
+msgid "Too many failed login attempts from this address. Try again later."
+msgstr "该来源地址的失败登录次数过多，请稍后再试。"
+
+msgid "Unspecified"
+msgstr "未指定"
+
+msgid "Username and password are required."
+msgstr "用户名和密码都必须填写。"
+
+msgid "Validity cannot exceed %(days)s days."
+msgstr "有效期不能超过 %(days)s 天。"
+
+msgid "Validity cannot exceed the signing intermediate CA (%(days)s days remaining on \"%(name)s\")."
+msgstr "有效期不能超过签发它的中间 CA（“%(name)s”剩余 %(days)s 天）。"
+
+msgid "Validity cannot exceed the signing root CA (%(days)s days remaining on \"%(name)s\")."
+msgstr "有效期不能超过签发它的根 CA（“%(name)s”剩余 %(days)s 天）。"
+
+msgid "Validity must be a whole number of days."
+msgstr "有效期必须是整数天。"
+
+msgid "Validity must be at least 1 day."
+msgstr "有效期至少为 1 天。"
+
+msgid "certificate requests (CSR) are not certificates; sign them instead"
+msgstr "证书请求（CSR）不是证书，请改为签发"
+
+msgid "certificate revocation lists are not imported (LocalCA serves no CRL)"
+msgstr "不导入证书吊销列表（LocalCA 不提供 CRL）"

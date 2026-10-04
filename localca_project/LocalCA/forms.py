@@ -7,9 +7,12 @@ never be the only bound on how long a certificate lives or on which CA is
 allowed to sign it.
 """
 
+import re
+
 from django import forms
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.utils import timezone
+from django.utils.translation import gettext_lazy as _
 
 from .keys import issuers_with_key
 from .models import (
@@ -33,10 +36,14 @@ def _validity_field(max_days):
     return forms.IntegerField(
         validators=[MinValueValidator(1), MaxValueValidator(max_days)],
         error_messages={
-            'required': 'A validity period is required.',
-            'invalid': 'Validity must be a whole number of days.',
-            'min_value': 'Validity must be at least 1 day.',
-            'max_value': f'Validity cannot exceed {max_days} days.',
+            'required': _('A validity period is required.'),
+            'invalid': _('Validity must be a whole number of days.'),
+            'min_value': _('Validity must be at least 1 day.'),
+            # Named placeholders rather than an f-string: the msgid has to stay
+            # identical whatever the bound is, or every bound needs its own
+            # translation.
+            'max_value': _('Validity cannot exceed %(days)s days.')
+            % {'days': max_days},
         },
     )
 
@@ -48,7 +55,7 @@ class CertificateForm(forms.Form):
     common_name = forms.CharField(
         max_length=255,
         strip=True,
-        error_messages={'required': 'A common name is required.'},
+        error_messages={'required': _('A common name is required.')},
     )
     validity_days = _validity_field(MAX_CA_VALIDITY_DAYS)
 
@@ -63,12 +70,12 @@ class CertificateForm(forms.Form):
     def clean_common_name(self):
         common_name = self.cleaned_data['common_name']
         if not common_name.strip():
-            raise forms.ValidationError('Common name cannot be empty.')
+            raise forms.ValidationError(_('Common name cannot be empty.'))
         if self.name_model is not None and self.name_model.objects.filter(
                 **{self.name_field: common_name}).exists():
             raise forms.ValidationError(
-                f'"{common_name}" is already in use by another certificate. '
-                f'Certificate names must be unique.'
+                _('"%(name)s" is already in use by another certificate. '
+                  'Certificate names must be unique.') % {'name': common_name}
             )
         return common_name
 
@@ -93,8 +100,8 @@ class IntermediateCertificateForm(CertificateForm):
     root_id = forms.ModelChoiceField(
         queryset=RootCertificate.objects.none(),
         error_messages={
-            'required': 'Select the root CA that should sign this certificate.',
-            'invalid_choice': 'That root CA is not available to you.',
+            'required': _('Select the root CA that should sign this certificate.'),
+            'invalid_choice': _('That root CA is not available to you.'),
         },
     )
 
@@ -123,8 +130,9 @@ class IntermediateCertificateForm(CertificateForm):
             root_is_usable = root_days > 0
             if root_is_usable and validity_days > root_days:
                 raise forms.ValidationError(
-                    f'Validity cannot exceed the signing root CA '
-                    f'({root_days} days remaining on "{root.name}").')
+                    _('Validity cannot exceed the signing root CA '
+                      '(%(days)s days remaining on "%(name)s").')
+                    % {'days': root_days, 'name': root.name})
         return cleaned_data
 
 
@@ -139,8 +147,8 @@ class LeafCertificateForm(CertificateForm):
     intermediate_id = forms.ModelChoiceField(
         queryset=IntermediateCertificate.objects.none(),
         error_messages={
-            'required': 'Select the intermediate CA that should sign this certificate.',
-            'invalid_choice': 'That intermediate CA is not available to you.',
+            'required': _('Select the intermediate CA that should sign this certificate.'),
+            'invalid_choice': _('That intermediate CA is not available to you.'),
         },
     )
 
@@ -171,17 +179,24 @@ class LeafCertificateForm(CertificateForm):
             intermediate_is_usable = remaining > 0
             if intermediate_is_usable and validity_days > remaining:
                 raise forms.ValidationError(
-                    f'Validity cannot exceed the signing intermediate CA '
-                    f'({remaining} days remaining on "{intermediate.name}").')
+                    _('Validity cannot exceed the signing intermediate CA '
+                      '(%(days)s days remaining on "%(name)s").')
+                    % {'days': remaining, 'name': intermediate.name})
         return cleaned_data
 
     def san_list(self):
         '''
         The SAN list for the CSR: explicit entries plus the common name,
         de-duplicated with the order preserved.
+
+        The UI offers a multi-line box and encourages one name per line, so
+        separators are commas *and* newlines. Splitting on any whitespace as
+        well costs nothing and rescues a pasted space- or tab-separated list:
+        no valid DNS name or IP address contains whitespace, so a broader split
+        can never divide a legitimate entry.
         '''
         raw = self.cleaned_data.get('san') or ''
-        entries = [item.strip() for item in raw.split(',') if item.strip()]
+        entries = [item.strip() for item in re.split(r'[\s,]+', raw) if item.strip()]
         common_name = self.cleaned_data.get('common_name')
         if common_name and common_name not in entries:
             entries.insert(0, common_name)
@@ -199,9 +214,9 @@ class RevokeForm(forms.Form):
     Form for revoking a certificate.
     '''
     type = forms.ChoiceField(choices=[
-        ('root', 'Root CA'),
-        ('intermediate', 'Intermediate CA'),
-        ('leaf', 'Leaf certificate'),
+        ('root', _('Root CA')),
+        ('intermediate', _('Intermediate CA')),
+        ('leaf', _('Leaf certificate')),
     ])
     id = forms.IntegerField(min_value=1)
     reason = forms.ChoiceField(

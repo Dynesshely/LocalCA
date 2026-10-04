@@ -93,6 +93,11 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    # Reads Accept-Language and activates the matching catalogue. It must sit
+    # after SessionMiddleware and before CommonMiddleware, and the SPA sends the
+    # locale the user picked in the header, so the API answers in the same
+    # language the interface is drawn in.
+    'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -156,7 +161,21 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.1/topics/i18n/
 
+# English stays the default: msgids are written in English, so an untranslated
+# string degrades to the source text instead of an empty label. Test clients
+# send no Accept-Language, so tests keep asserting the English wording.
 LANGUAGE_CODE = 'en-us'
+
+# Languages the API can answer in. LocaleMiddleware only activates a locale from
+# this list, so a stray Accept-Language cannot select a half-translated one.
+LANGUAGES = [
+    ('en', 'English'),
+    ('zh-hans', '简体中文'),
+]
+
+# Catalogues live next to the project (localca_project/locale/<locale>/LC_MESSAGES),
+# which is where `manage.py makemessages -l zh_Hans` writes them.
+LOCALE_PATHS = [BASE_DIR / 'locale']
 
 TIME_ZONE = os.environ.get('TZ', 'UTC')
 

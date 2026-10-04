@@ -1,0 +1,63 @@
+{
+  "home": {
+    "summary": {
+      "certificates": "{count} certificate | {count} certificates",
+      "roots": "{count} root | {count} roots",
+      "line": "{certificates} across {roots}."
+    },
+    "filter": {
+      "placeholder": "Filter by name, SAN, serial or owner",
+      "noMatch": "No certificate matches “{query}”."
+    },
+    "guestPrompt": "{link} to create, revoke or delete certificates.",
+    "empty": {
+      "title": "No certificates yet.",
+      "hint": "Start by creating a {link}.",
+      "rootCa": "root CA"
+    },
+    "kind": {
+      "root": "Root",
+      "intermediate": "Intermediate",
+      "leaf": "Leaf",
+      "certificate": "Certificate"
+    },
+    "field": {
+      "serial": "Serial:",
+      "created": "Created:",
+      "expires": "Expires:",
+      "signedBy": "Signed by:"
+    },
+    "badge": {
+      "createdByYou": "Created by you",
+      "owner": "owner: {owner}",
+      "noPrivateKey": "no private key",
+      "noPrivateKeyTitle": "This certificate was imported without its private key. It can be listed, revoked and downloaded as PEM, but it cannot sign and no PKCS12 bundle can be produced.",
+      "keyNotEncrypted": "key not encrypted",
+      "keyNotEncryptedTitle": "This private key predates encryption or has no owner, so it is still stored in cleartext."
+    },
+    "action": {
+      "publicKey": "Public key",
+      "publicChain": "Public chain",
+      "exportPkcs12": "Export PKCS12"
+    },
+    "pkcs12": {
+      "success": "PKCS12 bundle for “{name}” downloaded.",
+      "unlockReason": "Unlock to export the private key for “{name}”.",
+      "tooltipProtected": "Exports a password-protected PKCS12 bundle",
+      "tooltipUnprotected": "This key is not encrypted; export is still password-protected"
+    },
+    "expiry": {
+      "expiredAgo": "(expired {count} day ago) | (expired {count} days ago)",
+      "inDays": "(in {count} day) | (in {count} days)"
+    },
+    "revokedAt": "Revoked {date}",
+    "revoked": "Certificate “{name}” revoked.",
+    "revokedCascade": "{count} certificate signed by it was revoked too. | {count} certificates signed by it were revoked too.",
+    "deleted": "Certificate “{name}” deleted.",
+    "deletedCascade": "{count} dependent certificate was deleted too. | {count} dependent certificates were deleted too.",
+    "tree": {
+      "emptyLeaves": "No leaf certificates signed by this intermediate yet.",
+      "emptyIntermediates": "No intermediate CAs signed by this root yet."
+    }
+  }
+}

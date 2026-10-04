@@ -1,0 +1,52 @@
+{
+  "ca": {
+    "createRoot": {
+      "title": "创建根 CA",
+      "submit": "创建根 CA",
+      "submitting": "创建中……",
+      "success": "根 CA“{name}”创建成功。",
+      "failed": "无法创建该根 CA。",
+      "unlockReason": "生成 CA 密钥需要先解锁密钥库。"
+    },
+    "createIntermediate": {
+      "title": "创建中间 CA",
+      "submit": "创建中间 CA",
+      "submitting": "创建中……",
+      "success": "中间 CA“{name}”创建成功。",
+      "failed": "无法创建该中间 CA。",
+      "unlockReason": "签发中间 CA 需要先解锁密钥库。"
+    },
+    "rootName": {
+      "label": "根 CA 名称",
+      "placeholder": "例如 MyCompany Root CA",
+      "help": "必须唯一，它将作为证书的通用名称（CN）。"
+    },
+    "intermediateName": {
+      "label": "中间 CA 名称",
+      "placeholder": "例如 MyCompany Intermediate CA",
+      "help": "必须唯一。"
+    },
+    "validity": {
+      "label": "有效期（天）",
+      "rootHelp": "1 到 {max} 天。",
+      "intermediateHelp": "不得超过签发它的根 CA 的剩余有效期。"
+    },
+    "signingRoot": {
+      "label": "签发用根 CA",
+      "placeholder": "请选择根 CA",
+      "none": "你需要先拥有自己的根 CA：签发会消耗它的私钥，因此这里只列出你自己的根 CA。",
+      "help": "这里只列出你自己的根 CA。"
+    },
+    "list": {
+      "rootsTitle": "现有根 CA",
+      "rootsEmpty": "还没有根 CA，先创建第一个吧。",
+      "intermediatesTitle": "现有中间 CA",
+      "intermediatesEmpty": "还没有中间 CA。",
+      "name": "名称",
+      "status": "状态",
+      "expires": "到期时间",
+      "owner": "所有者",
+      "signedBy": "签发者"
+    }
+  }
+}

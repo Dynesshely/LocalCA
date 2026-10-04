@@ -1,0 +1,77 @@
+{
+  "common": {
+    "app": {
+      "name": "Local CA",
+      "tagline": "你自己的内部证书颁发机构"
+    },
+    "nav": {
+      "sectionCertificates": "证书",
+      "sectionAdministration": "管理",
+      "home": "证书层级",
+      "createCa": "创建 CA",
+      "createLeaf": "签发叶证书",
+      "import": "导入证书",
+      "audit": "审计日志",
+      "changePassword": "修改密码",
+      "login": "登录",
+      "logout": "退出登录",
+      "openMenu": "打开导航",
+      "closeMenu": "关闭导航",
+      "signedInAs": "当前账号：{username}",
+      "signedOut": "已退出登录。"
+    },
+    "action": {
+      "create": "创建",
+      "cancel": "取消",
+      "close": "关闭",
+      "delete": "删除",
+      "revoke": "吊销",
+      "refresh": "刷新",
+      "retry": "重试",
+      "back": "返回",
+      "confirm": "确认",
+      "clear": "清空",
+      "analyze": "分析",
+      "import": "导入",
+      "export": "导出"
+    },
+    "theme": {
+      "switchToLight": "切换到浅色模式",
+      "switchToDark": "切换到深色模式"
+    },
+    "language": {
+      "label": "语言",
+      "switched": "界面语言已切换为{language}",
+      "name": {
+        "en": "English",
+        "zh": "简体中文"
+      }
+    },
+    "state": {
+      "loading": "加载中……",
+      "loadingCertificates": "正在加载证书……",
+      "working": "处理中……",
+      "optional": "可选",
+      "unknown": "未知",
+      "yes": "是",
+      "no": "否"
+    },
+    "status": {
+      "active": "有效",
+      "revoked": "已吊销",
+      "expired": "已过期"
+    },
+    "footer": {
+      "rights": "Local CA © {year}"
+    },
+    "error": {
+      "unexpected": "出了点问题。",
+      "couldNotLoadCertificates": "无法加载证书：{message}",
+      "requestFailed": "请求失败，状态码 {status}",
+      "downloadFailed": "下载失败，状态码 {status}"
+    },
+    "field": {
+      "sanLabel": "SAN："
+    }
+  }
+}

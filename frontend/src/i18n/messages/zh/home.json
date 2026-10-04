@@ -1,0 +1,63 @@
+{
+  "home": {
+    "summary": {
+      "certificates": "{count} 张证书",
+      "roots": "{count} 个根 CA",
+      "line": "共 {certificates}，分属 {roots}。"
+    },
+    "filter": {
+      "placeholder": "按名称、SAN、序列号或所有者筛选",
+      "noMatch": "没有匹配“{query}”的证书。"
+    },
+    "guestPrompt": "请先{link}，然后即可创建、吊销或删除证书。",
+    "empty": {
+      "title": "暂无证书。",
+      "hint": "先从创建一个{link}开始吧。",
+      "rootCa": "根 CA"
+    },
+    "kind": {
+      "root": "根 CA",
+      "intermediate": "中间 CA",
+      "leaf": "叶证书",
+      "certificate": "证书"
+    },
+    "field": {
+      "serial": "序列号：",
+      "created": "创建时间：",
+      "expires": "到期时间：",
+      "signedBy": "签发者："
+    },
+    "badge": {
+      "createdByYou": "由你创建",
+      "owner": "所有者：{owner}",
+      "noPrivateKey": "无私钥",
+      "noPrivateKeyTitle": "该证书是导入的，未附带私钥。它可以被列出、吊销并以 PEM 格式下载，但不能用于签发，也无法生成 PKCS12 打包文件。",
+      "keyNotEncrypted": "私钥未加密",
+      "keyNotEncryptedTitle": "该私钥早于加密功能出现，或者没有所有者，因此仍以明文保存。"
+    },
+    "action": {
+      "publicKey": "公钥",
+      "publicChain": "证书链",
+      "exportPkcs12": "导出 PKCS12"
+    },
+    "pkcs12": {
+      "success": "已下载“{name}”的 PKCS12 打包文件。",
+      "unlockReason": "导出“{name}”的私钥需要先解锁密钥库。",
+      "tooltipProtected": "导出一个受密码保护的 PKCS12 打包文件",
+      "tooltipUnprotected": "该私钥未加密，但导出的打包文件仍受密码保护"
+    },
+    "expiry": {
+      "expiredAgo": "（已过期 {count} 天）",
+      "inDays": "（还有 {count} 天）"
+    },
+    "revokedAt": "吊销于 {date}",
+    "revoked": "证书“{name}”已吊销。",
+    "revokedCascade": "由它签发的 {count} 张证书也一并吊销。",
+    "deleted": "证书“{name}”已删除。",
+    "deletedCascade": "另外还删除了 {count} 张依赖它的证书。",
+    "tree": {
+      "emptyLeaves": "该中间 CA 尚未签发任何叶证书。",
+      "emptyIntermediates": "该根 CA 尚未签发任何中间 CA。"
+    }
+  }
+}

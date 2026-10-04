@@ -2,7 +2,12 @@
 /**
  * The full certificate hierarchy: roots, their intermediates, and each
  * intermediate's leaves. Pure presentation; the parent owns the dialogs.
+ *
+ * Each root is a sunken panel; the cards inside it are the levels. The
+ * indentation and the left rule on a nested card are what make the depth
+ * readable, and both live in `CertificateCard`.
  */
+import { useI18n } from 'vue-i18n'
 import CertificateCard from '@/components/CertificateCard.vue'
 
 defineProps({
@@ -12,6 +17,8 @@ defineProps({
 const emit = defineEmits([
   'download-public', 'export-pkcs12', 'revoke', 'delete',
 ])
+
+const { t } = useI18n()
 </script>
 
 <template>
@@ -19,8 +26,7 @@ const emit = defineEmits([
     <section
       v-for="node in tree"
       :key="`root-${node.certificate.id}`"
-      class="rounded-xl border p-3 sm:p-4"
-      :style="{ backgroundColor: 'var(--surface-raised)', borderColor: 'var(--border-subtle)' }"
+      class="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4 dark:border-slate-800 dark:bg-slate-950/50"
     >
       <CertificateCard
         :certificate="node.certificate"
@@ -56,19 +62,17 @@ const emit = defineEmits([
           </div>
           <p
             v-else
-            class="ms-6 mt-2 text-xs"
-            :style="{ color: 'var(--text-secondary)' }"
+            class="ms-12 mt-2 text-xs text-slate-500 dark:text-slate-400"
           >
-            No leaf certificates signed by this intermediate yet.
+            {{ t('home.tree.emptyLeaves') }}
           </p>
         </div>
       </div>
       <p
         v-else
-        class="ms-6 mt-2 text-xs"
-        :style="{ color: 'var(--text-secondary)' }"
+        class="ms-6 mt-2 text-xs text-slate-500 dark:text-slate-400"
       >
-        No intermediate CAs signed by this root yet.
+        {{ t('home.tree.emptyIntermediates') }}
       </p>
     </section>
   </div>

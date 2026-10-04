@@ -1,0 +1,63 @@
+{
+  "import": {
+    "intro": "Bring existing certificate material into LocalCA: a root or intermediate CA with its private key, a leaf certificate, or a whole chain. Formats are recognised by content, not by file extension.",
+    "step1": {
+      "title": "1. Choose what to import",
+      "chooseFiles": "Choose files",
+      "dropHint": "or drop them here — up to {max} file, {size} KiB each | or drop them here — up to {max} files, {size} KiB each",
+      "password": {
+        "label": "Password for encrypted keys",
+        "placeholder": "PKCS#12 or encrypted private key",
+        "help": "Only needed when a bundle or key in the upload is password protected. It is used for this request and never stored."
+      }
+    },
+    "step2": {
+      "title": "2. Review the plan",
+      "empty": "Nothing analyzed yet. The plan lists every certificate found, what would happen to it, and where it would sit in the hierarchy."
+    },
+    "count": {
+      "create": "{count} to import",
+      "attachKey": "{count} key to add | {count} keys to add",
+      "skip": "{count} already present",
+      "conflict": "{count} needs attention | {count} need attention",
+      "unsupported": "{count} cannot be stored",
+      "vaultLocked": "vault must be unlocked"
+    },
+    "table": {
+      "certificate": "Certificate",
+      "type": "Type",
+      "privateKey": "Private key",
+      "parent": "Parent",
+      "result": "Result",
+      "unnamed": "(unnamed)",
+      "hasKey": "yes ({algorithm})",
+      "san": "SAN: {names}"
+    },
+    "action": {
+      "create": "will import",
+      "skip": "already present",
+      "attachKey": "add key",
+      "conflict": "needs attention",
+      "unsupported": "cannot store"
+    },
+    "commit": {
+      "button": "Import {count} certificate | Import {count} certificates",
+      "warning": "Entries marked “{conflict}” or “{unsupported}” are skipped; import the missing issuer first, then analyze again."
+    },
+    "result": {
+      "created": "Created — root CA: {root}, intermediate CA: {intermediate}, leaf certificates: {leaf}; keys wrapped: {wrapped}, keys attached: {attached}, skipped: {skipped}.",
+      "failedEntries": "{count} entry failed: | {count} entries failed:",
+      "back": "Back to the hierarchy"
+    },
+    "formats": {
+      "title": "What can be imported",
+      "unsupported": "Not supported",
+      "sensitivity": "An imported private key is as sensitive as a generated one. If the CA you import is already trusted by clients, whoever can sign with it can impersonate those services — and private keys leave this application only as a password-protected PKCS#12 bundle."
+    },
+    "toast": {
+      "parsed": "Parsed {count} certificate. Nothing has been written yet. | Parsed {count} certificates. Nothing has been written yet.",
+      "imported": "Imported certificates — root CA: {root}, intermediate CA: {intermediate}, leaf certificates: {leaf}; keys wrapped: {wrapped}.",
+      "failed": "{count} entry could not be imported. | {count} entries could not be imported."
+    }
+  }
+}

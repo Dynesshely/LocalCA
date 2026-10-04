@@ -4,6 +4,7 @@ This module contains the models for the LocalCA application.
 
 from django.db import models
 from django.contrib.auth.models import User
+from django.utils.translation import gettext_lazy as _
 
 
 class RootCertificate(models.Model):
@@ -102,15 +103,18 @@ class RevokedCertificate(models.Model):
     class RevocationReason(models.TextChoices):
         '''
         RFC 5280 section 5.3.1 CRLReason values.
+
+        The labels are the human-readable text the revoke dialog shows, so they
+        are translated. The values are stored in the database and never are.
         '''
-        UNSPECIFIED = 'unspecified', 'Unspecified'
-        KEY_COMPROMISE = 'key_compromise', 'Key compromise'
-        CA_COMPROMISE = 'ca_compromise', 'CA compromise'
-        AFFILIATION_CHANGED = 'affiliation_changed', 'Affiliation changed'
-        SUPERSEDED = 'superseded', 'Superseded'
-        CESSATION_OF_OPERATION = 'cessation_of_operation', 'Cessation of operation'
-        CERTIFICATE_HOLD = 'certificate_hold', 'Certificate hold'
-        PRIVILEGE_WITHDRAWN = 'privilege_withdrawn', 'Privilege withdrawn'
+        UNSPECIFIED = 'unspecified', _('Unspecified')
+        KEY_COMPROMISE = 'key_compromise', _('Key compromise')
+        CA_COMPROMISE = 'ca_compromise', _('CA compromise')
+        AFFILIATION_CHANGED = 'affiliation_changed', _('Affiliation changed')
+        SUPERSEDED = 'superseded', _('Superseded')
+        CESSATION_OF_OPERATION = 'cessation_of_operation', _('Cessation of operation')
+        CERTIFICATE_HOLD = 'certificate_hold', _('Certificate hold')
+        PRIVILEGE_WITHDRAWN = 'privilege_withdrawn', _('Privilege withdrawn')
 
     created_by = models.ForeignKey(
         User,
@@ -151,7 +155,7 @@ class RevokedCertificate(models.Model):
         '''Display name of the revoked certificate.'''
         target = self.target
         if target is None:
-            return '(deleted)'  # only possible transiently, before cascade
+            return _('(deleted)')  # only possible transiently, before cascade
         if isinstance(target, LeafCertificate):
             return target.common_name
         return target.name

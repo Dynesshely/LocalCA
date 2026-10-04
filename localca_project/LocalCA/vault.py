@@ -42,6 +42,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
+from django.utils.translation import gettext as _
 
 #: Bumped only if the on-disk format changes incompatibly.
 ENVELOPE_VERSION = 1
@@ -128,7 +129,7 @@ def derive_kek(password: str, salt: bytes, *, n=SCRYPT_N, r=SCRYPT_R,
                p=SCRYPT_P) -> bytes:
     '''Derive the key-encryption key from a password. Never store the result.'''
     if not password:
-        raise VaultPasswordError('A vault password is required.')
+        raise VaultPasswordError(_('A vault password is required.'))
     return Scrypt(salt=salt, length=SCRYPT_LENGTH, n=n, r=r, p=p).derive(
         password.encode('utf-8'))
 
@@ -342,10 +343,11 @@ class UnsealedKeys:
         self._expire(user_id)
         root_key = self._root_keys.get(user_id)
         if root_key is None:
-            raise VaultLocked('The vault is locked for this account.')
+            raise VaultLocked(_('The vault is locked for this account.'))
         if password is not None and \
                 self._fingerprints.get(user_id) != _fingerprint(user_id, password):
-            raise VaultPasswordError('The vault password does not match the unlock.')
+            raise VaultPasswordError(
+                _('The vault password does not match the unlock.'))
         self._last_used[user_id] = time.time()
         return root_key
 

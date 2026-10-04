@@ -1,0 +1,77 @@
+{
+  "common": {
+    "app": {
+      "name": "Local CA",
+      "tagline": "Your own internal certificate authority"
+    },
+    "nav": {
+      "sectionCertificates": "Certificates",
+      "sectionAdministration": "Administration",
+      "home": "Certificate Hierarchy",
+      "createCa": "Create CA",
+      "createLeaf": "Create Leaf",
+      "import": "Import",
+      "audit": "Audit Log",
+      "changePassword": "Change Password",
+      "login": "Login",
+      "logout": "Logout",
+      "openMenu": "Open navigation",
+      "closeMenu": "Close navigation",
+      "signedInAs": "Signed in as {username}",
+      "signedOut": "You have been logged out."
+    },
+    "action": {
+      "create": "Create",
+      "cancel": "Cancel",
+      "close": "Close",
+      "delete": "Delete",
+      "revoke": "Revoke",
+      "refresh": "Refresh",
+      "retry": "Try again",
+      "back": "Back",
+      "confirm": "Confirm",
+      "clear": "Clear",
+      "analyze": "Analyze",
+      "import": "Import",
+      "export": "Export"
+    },
+    "theme": {
+      "switchToLight": "Switch to light mode",
+      "switchToDark": "Switch to dark mode"
+    },
+    "language": {
+      "label": "Language",
+      "switched": "Language switched to {language}",
+      "name": {
+        "en": "English",
+        "zh": "简体中文"
+      }
+    },
+    "state": {
+      "loading": "Loading...",
+      "loadingCertificates": "Loading certificates...",
+      "working": "Working...",
+      "optional": "optional",
+      "unknown": "Unknown",
+      "yes": "yes",
+      "no": "no"
+    },
+    "status": {
+      "active": "Active",
+      "revoked": "Revoked",
+      "expired": "Expired"
+    },
+    "footer": {
+      "rights": "Local CA © {year}"
+    },
+    "error": {
+      "unexpected": "Something went wrong.",
+      "couldNotLoadCertificates": "Could not load certificates: {message}",
+      "requestFailed": "Request failed with status {status}",
+      "downloadFailed": "Download failed with status {status}"
+    },
+    "field": {
+      "sanLabel": "SAN:"
+    }
+  }
+}

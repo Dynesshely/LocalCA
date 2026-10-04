@@ -4,9 +4,14 @@
  *
  * Keeping the dialogs here (rather than inside each card) means one instance
  * handles all certificates, and the target is always explicit.
+ *
+ * The page's own heading is gone on purpose: the shell's top bar already shows
+ * the route title, so the only line left here is the one that summarizes the
+ * hierarchy.
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import CertificateTree from '@/components/CertificateTree.vue'
 import ConfirmActionDialog from '@/components/ConfirmActionDialog.vue'
 import Pkcs12Dialog from '@/components/Pkcs12Dialog.vue'
@@ -18,6 +23,7 @@ import { useToastStore } from '@/stores/toasts'
 import { files } from '@/api'
 import { ApiError } from '@/api/client'
 
+const { t } = useI18n()
 const auth = useAuthStore()
 const certificates = useCertificatesStore()
 const vault = useVaultStore()
@@ -78,7 +84,7 @@ onMounted(async () => {
   try {
     await Promise.all([certificates.load(), vault.load()])
   } catch (err) {
-    toasts.error(`Could not load certificates: ${err.message}`)
+    toasts.error(t('common.error.couldNotLoadCertificates', { message: err.message }))
   }
 })
 
@@ -129,16 +135,15 @@ async function confirmAction(payload) {
         comment: payload.comment || '',
         cascade: payload.cascade ? '1' : '',
       })
-      const extra = result.cascaded?.length
-        ? ` ${result.cascaded.length} certificate(s) signed by it were revoked too.`
-        : ''
-      toasts.success(`Certificate "${result.revoked}" revoked.${extra}`)
+      const cascaded = result.cascaded?.length || 0
+      const extra = cascaded ? ` ${t('home.revokedCascade', cascaded)}` : ''
+      toasts.success(`${t('home.revoked', { name: result.revoked })}${extra}`)
     } else {
       const result = await certificates.remove(target.kind, target.id)
       const extra = result.cascaded
-        ? ` ${result.cascaded} dependent certificate(s) were deleted too.`
+        ? ` ${t('home.deletedCascade', Number(result.cascaded))}`
         : ''
-      toasts.success(`Certificate "${result.deleted}" deleted.${extra}`)
+      toasts.success(`${t('home.deleted', { name: result.deleted })}${extra}`)
     }
     actionOpen.value = false
     actionTarget.value = null
@@ -171,13 +176,13 @@ async function exportPkcs12(password) {
   busy.value = true
   try {
     await files.pkcs12(target.serial_number, target.name, password)
-    toasts.success(`PKCS12 bundle for "${target.name}" downloaded.`)
+    toasts.success(t('home.pkcs12.success', { name: target.name }))
     p12Open.value = false
   } catch (err) {
     if (isVaultLocked(err)) {
       p12Open.value = false
       askToUnlock(
-        `Unlock to export the private key for "${target.name}".`,
+        t('home.pkcs12.unlockReason', { name: target.name }),
         () => openPkcs12(target),
       )
     } else {
@@ -190,60 +195,83 @@ async function exportPkcs12(password) {
 </script>
 
 <template>
-  <div>
+  <div class="mx-auto w-full max-w-[1400px]">
     <div class="mb-4 flex flex-wrap items-end justify-between gap-3">
-      <div>
-        <h1 class="text-2xl font-semibold">Certificate Hierarchy</h1>
-        <p class="mt-1 text-sm" :style="{ color: 'var(--text-secondary)' }">
-          {{ totalCount }} certificate(s) across
-          {{ certificates.tree.length }} root(s).
-        </p>
-      </div>
+      <i18n-t keypath="home.summary.line" tag="p" class="text-sm text-slate-600 dark:text-slate-300">
+        <template #certificates>
+          <span class="font-semibold text-slate-900 dark:text-slate-100">
+            {{ t('home.summary.certificates', totalCount) }}
+          </span>
+        </template>
+        <template #roots>
+          <span class="font-semibold text-slate-900 dark:text-slate-100">
+            {{ t('home.summary.roots', certificates.tree.length) }}
+          </span>
+        </template>
+      </i18n-t>
 
       <div class="flex flex-wrap items-center gap-2">
         <input
           v-model="query"
           type="search"
-          placeholder="Filter by name, SAN, serial or owner"
+          :placeholder="t('home.filter.placeholder')"
           data-testid="certificate-filter"
-          class="w-64 rounded border px-3 py-2 text-sm"
-          :style="{ backgroundColor: 'var(--surface-sunken)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }"
+          class="w-72 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
         />
         <button
           type="button"
-          class="rounded border px-3 py-2 text-sm transition"
-          :style="{ borderColor: 'var(--border-strong)', color: 'var(--text-primary)' }"
+          class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
           @click="certificates.load()"
         >
-          Refresh
+          {{ t('common.action.refresh') }}
         </button>
       </div>
     </div>
 
-    <p
+    <i18n-t
       v-if="!auth.isAuthenticated"
-      class="mb-4 rounded px-4 py-3 text-sm"
-      :style="{ backgroundColor: 'var(--surface-accent)', color: 'var(--text-primary)' }"
+      keypath="home.guestPrompt"
+      tag="p"
+      class="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200"
     >
-      <RouterLink :to="{ name: 'login' }" class="font-medium underline">Log in</RouterLink>
-      to create, revoke or delete certificates.
-    </p>
-
-    <div v-if="certificates.loading" class="py-10 text-center text-sm" :style="{ color: 'var(--text-secondary)' }">
-      Loading certificates...
-    </div>
-
-    <div v-else-if="certificates.isEmpty" class="rounded border px-4 py-8 text-center text-sm"
-         :style="{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }">
-      No certificates yet.
-      <template v-if="auth.isAuthenticated">
-        Start by creating a
-        <RouterLink :to="{ name: 'create-ca' }" class="font-medium underline">root CA</RouterLink>.
+      <template #link>
+        <RouterLink :to="{ name: 'login' }" class="font-medium underline">
+          {{ t('common.nav.login') }}
+        </RouterLink>
       </template>
+    </i18n-t>
+
+    <div
+      v-if="certificates.loading"
+      class="py-10 text-center text-sm text-slate-500 dark:text-slate-400"
+    >
+      {{ t('common.state.loadingCertificates') }}
     </div>
 
-    <div v-else-if="!filteredTree.length" class="py-8 text-center text-sm" :style="{ color: 'var(--text-secondary)' }">
-      No certificate matches "{{ query }}".
+    <div
+      v-else-if="certificates.isEmpty"
+      class="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400"
+    >
+      <p>{{ t('home.empty.title') }}</p>
+      <i18n-t
+        v-if="auth.isAuthenticated"
+        keypath="home.empty.hint"
+        tag="p"
+        class="mt-1"
+      >
+        <template #link>
+          <RouterLink :to="{ name: 'create-ca' }" class="font-medium underline">
+            {{ t('home.empty.rootCa') }}
+          </RouterLink>
+        </template>
+      </i18n-t>
+    </div>
+
+    <div
+      v-else-if="!filteredTree.length"
+      class="py-8 text-center text-sm text-slate-500 dark:text-slate-400"
+    >
+      {{ t('home.filter.noMatch', { query }) }}
     </div>
 
     <CertificateTree

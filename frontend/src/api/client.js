@@ -7,6 +7,8 @@
  * same-origin fetch calls.
  */
 
+import { acceptLanguage, i18n } from '@/i18n'
+
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'TRACE'])
 
 function readCookie(name) {
@@ -22,6 +24,19 @@ export class ApiError extends Error {
     this.status = status
     this.payload = payload || {}
     this.errors = this.payload.errors || []
+    /**
+     * Validation messages keyed by *field name* (`common_name`), which is what
+     * the form's own definition calls it. Attaching a message to an input must
+     * never depend on the wording or the language of the message, and the flat
+     * `errors` list is for humans, so the two are separate.
+     */
+    this.fieldErrors = this.payload.field_errors || {}
+  }
+
+  /** The first validation message for a field, or an empty string. */
+  fieldError(name) {
+    const messages = this.fieldErrors[name]
+    return Array.isArray(messages) && messages.length ? messages[0] : ''
   }
 }
 
@@ -52,7 +67,13 @@ export async function request(path, options = {}) {
   const init = {
     method,
     credentials: 'same-origin',
-    headers: { Accept: 'application/json', ...(options.headers || {}) },
+    headers: {
+      Accept: 'application/json',
+      // Django's LocaleMiddleware reads this, so server-authored messages
+      // (validation errors, rate limits) arrive in the language on screen.
+      'Accept-Language': acceptLanguage(),
+      ...(options.headers || {}),
+    },
   }
 
   if (options.body !== undefined && options.body !== null) {
@@ -77,7 +98,7 @@ export async function request(path, options = {}) {
 
   if (!response.ok) {
     const message = (payload && (payload.errors?.[0] || payload.detail || payload.message))
-      || `Request failed with status ${response.status}`
+      || i18n.global.t('common.error.requestFailed', { status: response.status })
     throw new ApiError(message, { status: response.status, payload })
   }
   return payload
@@ -110,7 +131,7 @@ export async function download(path, fallbackName = 'download', body) {
       payload = null
     }
     const message = (payload && (payload.errors?.[0] || payload.detail))
-      || `Download failed with status ${response.status}`
+      || i18n.global.t('common.error.downloadFailed', { status: response.status })
     throw new ApiError(message, { status: response.status, payload })
   }
 

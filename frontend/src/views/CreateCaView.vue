@@ -4,8 +4,14 @@
  *
  * Mirrors the previous two-column layout: a form beside the list of existing
  * CAs, so a new CA can be compared against what is already there.
+ *
+ * Colours are Tailwind utilities (`dark:` beside the light value, no CSS
+ * variables) and all wording comes from the `ca` catalogue. Server validation
+ * messages are attached by *field name* (`common_name`, `validity_days`,
+ * `root_id`) rather than by parsing their labels.
  */
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import FormField from '@/components/FormField.vue'
 import VaultUnlockDialog from '@/components/VaultUnlockDialog.vue'
 import { useAuthStore } from '@/stores/auth'
@@ -14,6 +20,7 @@ import { useVaultStore } from '@/stores/vault'
 import { useToastStore } from '@/stores/toasts'
 import { ApiError } from '@/api/client'
 
+const { t, d } = useI18n()
 const auth = useAuthStore()
 const certificates = useCertificatesStore()
 const vault = useVaultStore()
@@ -43,14 +50,14 @@ async function onUnlocked() {
   if (retry) { await retry() }
 }
 const errors = ref([])
+const fieldErrors = ref({})
 
 const rootForm = reactive({ common_name: '', validity_days: 3650 })
 const intermediateForm = reactive({ common_name: '', validity_days: 1825, root_id: '' })
 
-const fieldError = (name) => {
-  const hit = errors.value.find((e) => e.toLowerCase().startsWith(name.toLowerCase() + ':'))
-  return hit ? hit.split(':').slice(1).join(':').trim() : ''
-}
+/** The first message the server attached to a named field, or an empty string. */
+const fieldError = (name) => (fieldErrors.value[name] || [])[0] || ''
+/** Messages that belong to no single field: `clean()` failures and the like. */
 const generalErrors = computed(() => errors.value.filter((e) => !e.includes(': ')))
 
 const allRoots = computed(() => certificates.flat.filter((c) => c.kind === 'root'))
@@ -60,25 +67,27 @@ onMounted(async () => {
   try {
     await Promise.all([certificates.load(), certificates.loadIssuers()])
   } catch (err) {
-    toasts.error(`Could not load certificates: ${err.message}`)
+    toasts.error(t('common.error.couldNotLoadCertificates', { message: err.message }))
   }
 })
 
 async function submitRoot() {
   errors.value = []
+  fieldErrors.value = {}
   busy.value = true
   try {
     const created = await certificates.create('root', { ...rootForm })
-    toasts.success(`Root CA "${created.name}" created successfully.`)
+    toasts.success(t('ca.createRoot.success', { name: created.name }))
     rootForm.common_name = ''
     await certificates.loadIssuers()
   } catch (err) {
     if (isVaultLocked(err)) {
-      askToUnlock('Generating a CA key needs the vault open.', submitRoot)
+      askToUnlock(t('ca.createRoot.unlockReason'), submitRoot)
       return
     }
     errors.value = err instanceof ApiError ? err.errors : [String(err)]
-    toasts.error(errors.value[0] || 'Could not create the root CA.')
+    fieldErrors.value = err instanceof ApiError ? err.fieldErrors : {}
+    toasts.error(errors.value[0] || t('ca.createRoot.failed'))
   } finally {
     busy.value = false
   }
@@ -86,19 +95,21 @@ async function submitRoot() {
 
 async function submitIntermediate() {
   errors.value = []
+  fieldErrors.value = {}
   busy.value = true
   try {
     const created = await certificates.create('intermediate', { ...intermediateForm })
-    toasts.success(`Intermediate CA "${created.name}" created successfully.`)
+    toasts.success(t('ca.createIntermediate.success', { name: created.name }))
     intermediateForm.common_name = ''
     await certificates.loadIssuers()
   } catch (err) {
     if (isVaultLocked(err)) {
-      askToUnlock('Signing an intermediate CA needs the vault open.', submitIntermediate)
+      askToUnlock(t('ca.createIntermediate.unlockReason'), submitIntermediate)
       return
     }
     errors.value = err instanceof ApiError ? err.errors : [String(err)]
-    toasts.error(errors.value[0] || 'Could not create the intermediate CA.')
+    fieldErrors.value = err instanceof ApiError ? err.fieldErrors : {}
+    toasts.error(errors.value[0] || t('ca.createIntermediate.failed'))
   } finally {
     busy.value = false
   }
@@ -110,85 +121,107 @@ function download(cert, kind) {
     files[api](cert.serial_number, cert.name).catch((err) => toasts.error(err.message))
   })
 }
+
+/** Short date in the reader's locale, not the browser's default formatting. */
+function formatDay(value) {
+  return value ? d(new Date(value), 'short') : ''
+}
 </script>
 
 <template>
-  <div class="space-y-8">
-    <h1 class="text-2xl font-semibold">Certificate Authorities</h1>
-
+  <div class="mx-auto w-full max-w-[1400px] space-y-6">
     <div
       v-if="generalErrors.length"
-      class="rounded border-l-4 border-red-500 bg-red-50 px-4 py-3 text-sm text-red-900 dark:bg-red-950/50 dark:text-red-200"
+      class="rounded-lg border-l-4 border-red-500 bg-red-50 px-3 py-2 text-sm text-red-900 dark:bg-red-950/40 dark:text-red-200"
     >
       <p v-for="(message, i) in generalErrors" :key="i">{{ message }}</p>
     </div>
 
     <!-- ------------------------------------------------------------ root CA -->
     <section class="grid gap-6 lg:grid-cols-2">
-      <div class="rounded-xl border shadow-sm" :style="{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }">
-        <h2 class="rounded-t-xl px-4 py-3 text-base font-semibold text-white" :style="{ backgroundColor: 'var(--color-brand-800)' }">
-          Create Root CA
+      <div
+        class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
+        <h2 class="bg-moss-600 px-5 py-3.5 text-base font-semibold text-white">
+          {{ t('ca.createRoot.title') }}
         </h2>
-        <form class="space-y-4 px-4 py-4" @submit.prevent="submitRoot">
+        <form class="space-y-4 px-5 py-5" @submit.prevent="submitRoot">
           <FormField
             id="ca_name"
             v-model="rootForm.common_name"
-            label="Root CA Name"
+            :label="t('ca.rootName.label')"
             required
-            placeholder="e.g. MyCompany Root CA"
-            help="Must be unique. It becomes the certificate's Common Name."
-            :error="fieldError('Common name')"
+            :placeholder="t('ca.rootName.placeholder')"
+            :help="t('ca.rootName.help')"
+            :error="fieldError('common_name')"
           />
           <FormField
             id="root_validity_days"
             v-model.number="rootForm.validity_days"
-            label="Validity period (days)"
+            :label="t('ca.validity.label')"
             type="number"
             required
             :min="1"
             :max="auth.maxValidityDays.root"
-            :help="`1 to ${auth.maxValidityDays.root} days.`"
-            :error="fieldError('Validity days')"
+            :help="t('ca.validity.rootHelp', { max: auth.maxValidityDays.root })"
+            :error="fieldError('validity_days')"
           />
           <button
             type="submit"
-            class="w-full rounded px-4 py-2 text-sm font-medium text-white transition disabled:opacity-60"
-            :style="{ backgroundColor: 'var(--color-brand-700)' }"
+            class="w-full rounded-lg bg-moss-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-moss-500 disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="busy"
             data-testid="create-root"
           >
-            {{ busy ? 'Creating...' : 'Create Root CA' }}
+            {{ busy ? t('ca.createRoot.submitting') : t('ca.createRoot.submit') }}
           </button>
         </form>
       </div>
 
-      <div class="rounded-xl border shadow-sm" :style="{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }">
-        <h2 class="rounded-t-xl px-4 py-3 text-base font-semibold text-white" :style="{ backgroundColor: 'var(--color-brand-500)' }">
-          Existing Root CAs
+      <div
+        class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
+        <h2 class="bg-brand-500 px-5 py-3.5 text-base font-semibold text-white">
+          {{ t('ca.list.rootsTitle') }}
         </h2>
-        <div class="px-4 py-4">
-          <div v-if="!allRoots.length" class="text-sm" :style="{ color: 'var(--text-secondary)' }">
-            No root CAs yet. Create your first one.
-          </div>
-          <div v-else class="max-h-96 overflow-auto">
+        <div class="px-5 py-5">
+          <p v-if="!allRoots.length" class="text-sm text-slate-500 dark:text-slate-400">
+            {{ t('ca.list.rootsEmpty') }}
+          </p>
+          <div v-else class="max-h-[32rem] overflow-auto">
             <table class="w-full text-left text-sm">
-              <thead class="sticky top-0" :style="{ backgroundColor: 'var(--surface-sunken)' }">
+              <thead class="sticky top-0 bg-slate-50 text-slate-600 dark:bg-slate-950/70 dark:text-slate-300">
                 <tr>
-                  <th class="px-3 py-2 font-medium">Name</th>
-                  <th class="px-3 py-2 font-medium">Status</th>
-                  <th class="px-3 py-2 font-medium">Expires</th>
-                  <th class="px-3 py-2 font-medium">Owner</th>
+                  <th class="px-3 py-2 font-medium">{{ t('ca.list.name') }}</th>
+                  <th class="px-3 py-2 font-medium">{{ t('ca.list.status') }}</th>
+                  <th class="px-3 py-2 font-medium">{{ t('ca.list.expires') }}</th>
+                  <th class="px-3 py-2 font-medium">{{ t('ca.list.owner') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="root in allRoots" :key="root.id" class="border-t" :style="{ borderColor: 'var(--border-subtle)' }">
-                  <td class="px-3 py-2 break-all">{{ root.name }}</td>
+                <tr
+                  v-for="root in allRoots"
+                  :key="root.id"
+                  class="border-t border-slate-200 dark:border-slate-800"
+                >
+                  <td class="px-3 py-2 break-all text-slate-800 dark:text-slate-100">{{ root.name }}</td>
                   <td class="px-3 py-2">
-                    <span v-if="root.revocation" class="rounded bg-danger px-2 py-0.5 text-xs text-white">Revoked</span>
-                    <span v-else class="rounded bg-emerald-600 px-2 py-0.5 text-xs text-white">Active</span>
+                    <span
+                      v-if="root.revocation"
+                      class="inline-block whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/40 dark:text-red-200"
+                    >
+                      {{ t('common.status.revoked') }}
+                    </span>
+                    <span
+                      v-else
+                      class="inline-block whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                    >
+                      {{ t('common.status.active') }}
+                    </span>
                   </td>
-                  <td class="px-3 py-2 whitespace-nowrap">{{ new Date(root.valid_until).toLocaleDateString() }}</td>
-                  <td class="px-3 py-2">{{ root.owner || '-' }}</td>
+                  <td class="px-3 py-2 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                    {{ formatDay(root.valid_until) }}
+                  </td>
+                  <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ root.owner || '-' }}</td>
                 </tr>
               </tbody>
             </table>
@@ -199,99 +232,125 @@ function download(cert, kind) {
 
     <!-- ---------------------------------------------------- intermediate CA -->
     <section class="grid gap-6 lg:grid-cols-2">
-      <div class="rounded-xl border shadow-sm" :style="{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }">
-        <h2 class="rounded-t-xl px-4 py-3 text-base font-semibold text-white" :style="{ backgroundColor: 'var(--color-brand-600)' }">
-          Create Intermediate CA
+      <div
+        class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
+        <h2 class="bg-moss-600 px-5 py-3.5 text-base font-semibold text-white">
+          {{ t('ca.createIntermediate.title') }}
         </h2>
-        <form class="space-y-4 px-4 py-4" @submit.prevent="submitIntermediate">
+        <form class="space-y-4 px-5 py-5" @submit.prevent="submitIntermediate">
           <FormField
             id="intermediate_name"
             v-model="intermediateForm.common_name"
-            label="Intermediate CA Name"
+            :label="t('ca.intermediateName.label')"
             required
-            placeholder="e.g. MyCompany Intermediate CA"
-            help="Must be unique."
-            :error="fieldError('Common name')"
+            :placeholder="t('ca.intermediateName.placeholder')"
+            :help="t('ca.intermediateName.help')"
+            :error="fieldError('common_name')"
           />
 
           <div>
-            <label for="root_id" class="mb-1 block text-sm font-medium">Signing Root CA</label>
+            <label for="root_id" class="mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              {{ t('ca.signingRoot.label') }}
+            </label>
             <select
               id="root_id"
               v-model="intermediateForm.root_id"
               required
               data-testid="root_id"
-              class="w-full rounded border px-3 py-2 text-sm"
-              :style="{ backgroundColor: 'var(--surface-sunken)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }"
+              class="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm transition focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             >
-              <option value="" disabled>Select a Root CA</option>
+              <option value="" disabled>{{ t('ca.signingRoot.placeholder') }}</option>
               <option v-for="root in certificates.issuers.roots" :key="root.id" :value="root.id">
                 {{ root.name }}
               </option>
             </select>
             <p
-              v-if="!certificates.issuers.roots.length"
-              class="mt-1 text-xs text-red-600 dark:text-red-400"
+              v-if="fieldError('root_id')"
+              id="root_id-error"
+              class="mt-1.5 text-xs text-red-600 dark:text-red-400"
             >
-              You need a root CA of your own first: signing consumes its private key,
-              so only your own roots are listed.
+              {{ fieldError('root_id') }}
             </p>
-            <p v-else class="mt-1 text-xs" :style="{ color: 'var(--text-secondary)' }">
-              Only your own root CAs are listed.
+            <p
+              v-else-if="!certificates.issuers.roots.length"
+              class="mt-1.5 text-xs text-amber-700 dark:text-amber-300"
+            >
+              {{ t('ca.signingRoot.none') }}
+            </p>
+            <p v-else class="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+              {{ t('ca.signingRoot.help') }}
             </p>
           </div>
 
           <FormField
             id="intermediate_validity_days"
             v-model.number="intermediateForm.validity_days"
-            label="Validity period (days)"
+            :label="t('ca.validity.label')"
             type="number"
             required
             :min="1"
             :max="auth.maxValidityDays.intermediate"
-            help="Cannot outlive the signing root CA."
-            :error="fieldError('Validity days')"
+            :help="t('ca.validity.intermediateHelp')"
+            :error="fieldError('validity_days')"
           />
 
           <button
             type="submit"
-            class="w-full rounded px-4 py-2 text-sm font-medium text-white transition disabled:opacity-60"
-            :style="{ backgroundColor: 'var(--color-brand-600)' }"
+            class="w-full rounded-lg bg-moss-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-moss-500 disabled:cursor-not-allowed disabled:opacity-60"
             :disabled="busy || !certificates.issuers.roots.length"
             data-testid="create-intermediate"
           >
-            {{ busy ? 'Creating...' : 'Create Intermediate CA' }}
+            {{ busy ? t('ca.createIntermediate.submitting') : t('ca.createIntermediate.submit') }}
           </button>
         </form>
       </div>
 
-      <div class="rounded-xl border shadow-sm" :style="{ backgroundColor: 'var(--surface-card)', borderColor: 'var(--border-subtle)' }">
-        <h2 class="rounded-t-xl px-4 py-3 text-base font-semibold text-white" :style="{ backgroundColor: 'var(--color-brand-500)' }">
-          Existing Intermediate CAs
+      <div
+        class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
+        <h2 class="bg-brand-500 px-5 py-3.5 text-base font-semibold text-white">
+          {{ t('ca.list.intermediatesTitle') }}
         </h2>
-        <div class="px-4 py-4">
-          <div v-if="!allIntermediates.length" class="text-sm" :style="{ color: 'var(--text-secondary)' }">
-            No intermediate CAs yet.
-          </div>
-          <div v-else class="max-h-96 overflow-auto">
+        <div class="px-5 py-5">
+          <p v-if="!allIntermediates.length" class="text-sm text-slate-500 dark:text-slate-400">
+            {{ t('ca.list.intermediatesEmpty') }}
+          </p>
+          <div v-else class="max-h-[32rem] overflow-auto">
             <table class="w-full text-left text-sm">
-              <thead class="sticky top-0" :style="{ backgroundColor: 'var(--surface-sunken)' }">
+              <thead class="sticky top-0 bg-slate-50 text-slate-600 dark:bg-slate-950/70 dark:text-slate-300">
                 <tr>
-                  <th class="px-3 py-2 font-medium">Name</th>
-                  <th class="px-3 py-2 font-medium">Status</th>
-                  <th class="px-3 py-2 font-medium">Signed by</th>
-                  <th class="px-3 py-2 font-medium">Expires</th>
+                  <th class="px-3 py-2 font-medium">{{ t('ca.list.name') }}</th>
+                  <th class="px-3 py-2 font-medium">{{ t('ca.list.status') }}</th>
+                  <th class="px-3 py-2 font-medium">{{ t('ca.list.signedBy') }}</th>
+                  <th class="px-3 py-2 font-medium">{{ t('ca.list.expires') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="ca in allIntermediates" :key="ca.id" class="border-t" :style="{ borderColor: 'var(--border-subtle)' }">
-                  <td class="px-3 py-2 break-all">{{ ca.name }}</td>
+                <tr
+                  v-for="ca in allIntermediates"
+                  :key="ca.id"
+                  class="border-t border-slate-200 dark:border-slate-800"
+                >
+                  <td class="px-3 py-2 break-all text-slate-800 dark:text-slate-100">{{ ca.name }}</td>
                   <td class="px-3 py-2">
-                    <span v-if="ca.revocation" class="rounded bg-danger px-2 py-0.5 text-xs text-white">Revoked</span>
-                    <span v-else class="rounded bg-emerald-600 px-2 py-0.5 text-xs text-white">Active</span>
+                    <span
+                      v-if="ca.revocation"
+                      class="inline-block whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900/40 dark:text-red-200"
+                    >
+                      {{ t('common.status.revoked') }}
+                    </span>
+                    <span
+                      v-else
+                      class="inline-block whitespace-nowrap rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200"
+                    >
+                      {{ t('common.status.active') }}
+                    </span>
                   </td>
-                  <td class="px-3 py-2">{{ ca.signed_by?.name }}</td>
-                  <td class="px-3 py-2 whitespace-nowrap">{{ new Date(ca.valid_until).toLocaleDateString() }}</td>
+                  <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ ca.signed_by?.name }}</td>
+                  <td class="px-3 py-2 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                    {{ formatDay(ca.valid_until) }}
+                  </td>
                 </tr>
               </tbody>
             </table>

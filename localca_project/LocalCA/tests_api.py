@@ -24,6 +24,17 @@ from .models import (
 )
 
 
+def stored_sans(leaf):
+    '''
+    The SAN list as the model keeps it.
+
+    ``LeafCertificate.san`` is one comma-separated TextField (the serializer
+    splits it again for the API), so the assertions below read it back the same
+    way the application does instead of iterating over the string's characters.
+    '''
+    return [entry for entry in (leaf.san or '').split(',') if entry]
+
+
 class ApiTestBase(TestCase):
 
     @classmethod
@@ -256,6 +267,50 @@ class CertificateCreationApiTests(ApiTestBase):
         self.assertEqual(response.status_code, 201)
         leaf = LeafCertificate.objects.get(common_name='new.internal')
         self.assertIn('alt.internal', leaf.san)
+
+    def test_create_leaf_with_one_san_per_line(self):
+        '''
+        The form offers a multi-line box, so newlines separate names exactly as
+        commas do. Before this was supported a pasted column of names became a
+        single SAN with a newline inside it.
+        '''
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        response = self.post_form('/api/certificates/create/leaf/', {
+            'common_name': 'multi.internal',
+            'san': 'a.internal\nb.internal\r\nc.internal',
+            'validity_days': '300', 'intermediate_id': str(self.intermediate.id)})
+        self.assertEqual(response.status_code, 201)
+        leaf = LeafCertificate.objects.get(common_name='multi.internal')
+        self.assertEqual(
+            stored_sans(leaf), ['multi.internal', 'a.internal', 'b.internal', 'c.internal'])
+
+    def test_san_separators_may_be_mixed(self):
+        '''Lines, commas, spaces and tabs all separate; blank lines are ignored.'''
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        response = self.post_form('/api/certificates/create/leaf/', {
+            'common_name': 'mixed.internal',
+            'san': '\n a.internal, b.internal\n\n\tc.internal ,\n 10.0.0.7 \n',
+            'validity_days': '300', 'intermediate_id': str(self.intermediate.id)})
+        self.assertEqual(response.status_code, 201)
+        leaf = LeafCertificate.objects.get(common_name='mixed.internal')
+        self.assertEqual(
+            stored_sans(leaf),
+            ['mixed.internal', 'a.internal', 'b.internal', 'c.internal', '10.0.0.7'])
+
+    def test_a_newline_never_reaches_the_certificate(self):
+        '''
+        Guard the regression itself: no SAN that ends up on a certificate may
+        contain whitespace, whatever separators the user typed.
+        '''
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        self.post_form('/api/certificates/create/leaf/', {
+            'common_name': 'clean.internal',
+            'san': 'one.internal,\n two.internal',
+            'validity_days': '300', 'intermediate_id': str(self.intermediate.id)})
+        leaf = LeafCertificate.objects.get(common_name='clean.internal')
+        for entry in stored_sans(leaf):
+            self.assertFalse(
+                re.search(r'\s', entry), f'SAN entry contains whitespace: {entry!r}')
 
     def test_creation_requires_authentication(self):
         response = self.post_form('/api/certificates/create/root/', {

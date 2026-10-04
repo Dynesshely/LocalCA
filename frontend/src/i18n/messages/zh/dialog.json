@@ -1,0 +1,58 @@
+{
+  "dialog": {
+    "close": "关闭对话框",
+    "dismiss": "关闭提示",
+    "kind": {
+      "root": "根 CA",
+      "intermediate": "中间 CA",
+      "leaf": "叶证书",
+      "certificate": "证书"
+    },
+    "revoke": {
+      "title": "吊销证书",
+      "prompt": "确定要吊销{kind}“{name}”吗？",
+      "reasonLabel": "吊销原因",
+      "reasonHelp": "RFC 5280 吊销原因代码（CRL reason），会记录到审计日志。",
+      "commentLabel": "备注",
+      "commentPlaceholder": "例如：笔记本遗失、密钥已轮换",
+      "cascade": "同时吊销由它签发的 {count} 张证书",
+      "warningCa": "吊销仅在本应用内记录：它不会把该证书从任何信任库中移除，而且目前还没有 CRL 或 OCSP 端点来发布吊销状态——客户端会继续信任这个 CA，直到该证书过期或被手动从信任库中移除。",
+      "warningLeaf": "吊销仅在本应用内记录：本应用目前还没有发布 CRL 或 OCSP 端点，因此已经分发出去的证书在过期前仍然有效——请同时从依赖它的系统中删除该证书。"
+    },
+    "delete": {
+      "title": "删除证书",
+      "prompt": "确定要永久删除{kind}“{name}”吗？",
+      "confirm": "永久删除",
+      "warningCascade": "这会立即且不可逆地删除私钥材料，以及由它签发的 {count} 张证书。如果你只是想让它失效，请改用吊销。",
+      "warning": "这会立即且不可逆地删除私钥材料，且无法撤销。"
+    },
+    "vault": {
+      "title": "解锁私钥",
+      "firstTimeIntro": "证书私钥以加密形式存储。请设置一个{password}来保护它们——此后 LocalCA 每次需要签名或导出密钥时，都会要求你输入这个密码。",
+      "intro": "私钥在静态存储时是加密的。请输入密钥库密码，以便用它进行签名和导出。",
+      "noRecovery": "密码无法找回。",
+      "noRecoveryWarning": "{lead}如果你忘记这个密码，此账户下的所有私钥都会永久无法读取——包括任何 CA 私钥。任何人（包括管理员）都无法重置。",
+      "choosePassword": "设置密钥库密码",
+      "password": "密钥库密码",
+      "passwordPlaceholder": "至少 8 个字符",
+      "passwordHelp": "至少 8 个字符；越长越好，它离线保护你的 CA 密钥。",
+      "submitFirstTime": "设置密码并解锁",
+      "submit": "解锁",
+      "error": "无法打开密钥库。"
+    },
+    "p12": {
+      "title": "下载 PKCS12",
+      "intro": "将 {name} 及其私钥导出为单个 {extension} 捆绑包。",
+      "importantLead": "重要：",
+      "warning": "{lead}请记下这个密码。它无法找回；一旦忘记，只能重新导出捆绑包。",
+      "passwordNote": "导出密码为必填项：捆绑包内含私钥，绝不会以未加密的形式写入磁盘。",
+      "passwordLabel": "导出密码",
+      "passwordPlaceholder": "至少 8 个字符",
+      "passwordTooShort": "请使用至少 8 个字符。",
+      "show": "显示",
+      "hide": "隐藏",
+      "preparing": "准备中……",
+      "download": "下载"
+    }
+  }
+}
