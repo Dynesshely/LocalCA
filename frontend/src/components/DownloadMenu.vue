@@ -46,6 +46,23 @@ const groups = computed(() => [
 ].filter((group) => group.ids.length))
 
 /**
+ * Whether this caller may export the private key at all.
+ *
+ * The owner always may. Staff may too when the key is legacy cleartext: that key
+ * is not wrapped with anybody's vault password, so no vault is involved. A key
+ * that *is* wrapped belongs to the account that owns it -- the server refuses
+ * everyone else, administrator included, and there is nothing to offer here.
+ */
+const canExportKey = computed(() => props.certificate?.is_owner === true
+  || (props.certificate?.unprotected_legacy === true
+      && props.certificate?.can_manage === true))
+
+/** A private format is only usable when there is a key and it can be opened. */
+function privateDisabled(format) {
+  return format.access === 'private' && (!props.hasKey || !canExportKey.value)
+}
+
+/**
  * Open the menu above everything.
  *
  * The menu is teleported to <body> and positioned from the button's viewport
@@ -151,16 +168,20 @@ onBeforeUnmount(() => {
         <p class="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
           {{ t(`home.download.group.${group.key}`) }}
         </p>
+        <p
+          v-if="group.key === 'privateKey' && !canExportKey"
+          class="px-3 pb-1 text-xs text-slate-500 dark:text-slate-400"
+          data-testid="download-not-yours"
+        >
+          {{ t('home.download.notYours') }}
+        </p>
         <button
           v-for="format in group.ids"
           :key="format.id"
           type="button"
           role="menuitem"
-          class="flex w-full items-start gap-2 px-3 py-1.5 text-left text-sm transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-slate-700"
-          :class="format.access === 'private'
-            ? 'text-slate-700 dark:text-slate-200'
-            : 'text-slate-700 dark:text-slate-200'"
-          :disabled="format.access === 'private' && !hasKey"
+          class="flex w-full items-start gap-2 px-3 py-1.5 text-left text-sm text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-200 dark:hover:bg-slate-700"
+          :disabled="privateDisabled(format)"
           :data-testid="`download-${format.id}-${certificate.id}`"
           @click="choose(format)"
         >

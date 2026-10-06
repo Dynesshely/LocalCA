@@ -104,6 +104,14 @@ export function useCertificateDownload() {
           () => run(target, formatId, body))
         return
       }
+      // A refusal the dialog cannot answer -- not your certificate, no vault, no
+      // key -- leaves it open over the page with nothing to correct, so it is
+      // closed. A 400 is different: the server rejected the password, and the
+      // dialog is exactly where that gets fixed.
+      if (!(err instanceof ApiError) || err.status !== 400) {
+        pendingFormat.value = null
+        pendingCertificate.value = null
+      }
       toasts.error(err instanceof ApiError ? err.message : String(err))
     } finally {
       busy.value = false

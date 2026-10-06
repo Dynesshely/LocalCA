@@ -163,6 +163,56 @@ class SessionApiTests(ApiTestBase):
         self.assertEqual(payload['max_validity_days']['root'], 7300)
 
 
+class VaultApiTests(ApiTestBase):
+    '''
+    The vault endpoints, and the first-time sweep that goes with choosing a
+    password: an account that had cleartext keys must not keep them.
+    '''
+
+    def test_first_unlock_encrypts_the_keys_the_account_already_had(self):
+        from .keys import is_legacy_plaintext, is_wrapped
+        from .models import VaultRootKey
+
+        user = User.objects.create_user('vault-newbie', password='pw-Newbie-123')
+        cert = LeafCertificate.objects.create(
+            common_name='newbie.internal', san='newbie.internal',
+            serial_number='99112233', public_key=self.leaf.public_key,
+            private_key_encrypted=self.leaf.private_key_encrypted,
+            signed_by_intermediate=self.intermediate,
+            valid_until=self.leaf.valid_until, created_by=user)
+        self.assertFalse(VaultRootKey.objects.filter(user=user).exists())
+        self.assertTrue(is_legacy_plaintext(cert))
+
+        self.client.login(username='vault-newbie', password='pw-Newbie-123')
+        response = self.post_json(reverse('api:vault_unseal'),
+                                  {'vault_password': 'chosen-just-now-123'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['encrypted_existing'], 1)
+
+        cert.refresh_from_db()
+        self.assertTrue(is_wrapped(cert))
+        self.assertEqual(cert.private_key_encrypted, '')
+        # The stored form is the encrypted envelope, never the PEM.
+        self.assertNotIn('PRIVATE KEY', cert.private_key_wrapped)
+        self.assertTrue(VaultRootKey.objects.filter(user=user).exists())
+
+        # Unlocking again is not a setup, and says so rather than repeating the
+        # sweep count.
+        self.client.post(reverse('api:vault_lock'))
+        again = self.post_json(reverse('api:vault_unseal'),
+                               {'vault_password': 'chosen-just-now-123'})
+        self.assertEqual(again.status_code, 200)
+        self.assertEqual(again.json()['encrypted_existing'], 0)
+
+    def test_a_wrong_password_after_setup_is_a_json_403(self):
+        self.lock_vault(self.owner)
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        response = self.post_json(reverse('api:vault_unseal'),
+                                  {'vault_password': 'not-the-password'})
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response['Content-Type'], 'application/json')
+
+
 class CertificateTreeApiTests(ApiTestBase):
 
     def test_tree_is_public_and_nested(self):
@@ -562,6 +612,10 @@ class DownloadApiTests(ApiTestBase):
                                                             'key_password': 'password-1',
                                                             'p12_password': 'password-1'})
                 self.assertEqual(response.status_code, 403)
+                # JSON, so the interface can show the sentence instead of
+                # "download failed with status 403".
+                self.assertEqual(response['Content-Type'], 'application/json')
+                self.assertIn('you own', response.json()['errors'][0])
 
     def test_staff_cannot_export_another_accounts_private_key(self):
         '''

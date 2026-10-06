@@ -170,17 +170,21 @@ python3 -c "import secrets; print(secrets.token_urlsafe(50))"   # paste into DJA
 Certificate private keys are not stored in cleartext. Each account wraps them with
 a **vault password**:
 
-* On your first signing action LocalCA asks you to choose one. It is not the same
-  as your login password, though nothing stops you using the same value.
+* On your first action that needs a key — signing, not merely exporting a
+  certificate that predates the vault — LocalCA asks you to **choose** one. It is
+  not the same as your login password, though nothing stops you using the same
+  value. Keys of yours that are still cleartext are **encrypted at that moment**,
+  so an account never sits half-protected because somebody forgot to run a
+  command.
 * The vault stays open in the server's memory for 15 minutes of inactivity
   (`LOCALCA_VAULT_IDLE_TIMEOUT` to change it), then locks again. You can also lock
   it explicitly.
 * **There is no recovery.** If the vault password is lost, every private key under
   that account becomes permanently unreadable, including CA keys. No administrator
   can reset it. Store it somewhere safe.
-* Keys created before this feature, and keys belonging to a certificate with no
-  owner, remain cleartext: `python manage.py vault_status` lists exactly which
-  keys are encrypted and which are not. Run
+* Keys belonging to a certificate with no owner remain cleartext: there is no
+  account whose password could wrap them, so `python manage.py vault_status` lists
+  them as `orphaned`. Assign an owner and run
   `python manage.py rewrap_keys --username <user>` to encrypt the rest.
 * Private keys leave the server only through the Download menu's guarded formats:
   two password-protected ones, one where you choose the passphrase, and one that
@@ -340,7 +344,11 @@ The first four are **public**: they are the certificate material a client needs
 in order to trust this CA, so they need no session. The last four contain the
 private key and require all of:
 
-* an authenticated session, and that the certificate is yours (or you are staff);
+* an authenticated session, and that the certificate is **yours** — staff can
+  revoke, delete and export the certificate of another account, but never its
+  private key: the key is wrapped with *that* account's vault password and there
+  is no escrow, so the menu offers those formats as unavailable rather than
+  letting the request fail;
 * the **vault unlocked**, so the key can be decrypted at all — a locked vault
   answers `409 vault_locked` and the interface offers to unlock and retry;
 * for the protected formats, an export password of at least eight characters;

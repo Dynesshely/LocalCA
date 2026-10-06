@@ -19,6 +19,9 @@
 | D36 | 下载菜单用 **Teleport + fixed 定位**，不用 `absolute` | agent | 它所在的卡片有 `overflow-hidden`（为了圆角标题条），表格又 `overflow-auto`——`absolute` 菜单只显示第一行就被裁掉（截图已证实）。`:style` 在这里只传几何坐标，与「配色不许走 style」的约定不冲突 |
 | D37 | **管理员也导不出别人的私钥**，且这个拒绝要有自己的文案 | agent 默认 | 密钥库根密钥是**按账号**包裹的，没有托管/代管一说，用调用者自己的根密钥去解别人的密文必然失败。改之前它撞成 `Ciphertext failed authentication: wrong key or tampered data.`（409）——听起来像数据损坏，实际是权限边界。现在只对 `is_wrapped` 的证书先判归属并返回「属于其他账号」；`can_manage`（吊销/删除）保持原样，legacy 明文密钥也不受影响 |
 | D38 | 开发实例上**密钥库口令 = 账号口令**（`admin`/`alice`/`bob` 统一为 `localca-dev-pass-123`） | 用户要求 | 密钥库口令在产品里是真实存在的独立秘密（首次解锁自设、不可找回），但 scratch 实例上「三个账号三个没人记得的口令」只会把操作者锁在自己的演示数据外面——验收时就是这么被卡住的。`rewrap_root_key` 只重包根密钥，证书不用动；重建 dev 库后新账号的首次解锁也按这个值设置（D19） |
+| D39 | 别人的私钥：服务端返回**说明性的 JSON 403**（不再抛 `PermissionDenied` 的 HTML 页），前端**直接不提供**那些格式 | agent 默认 | 旧行为是 `raise PermissionDenied` → Django 输出 HTML 403 → 客户端解析不了，toast 只剩「Download failed with status 403」，而且失败后**确认弹窗留在页面上**。现在：403 是 JSON（能显示句子）、`DownloadMenu` 对非本人证书把 4 个私钥格式置灰并写一行原因、`useCertificateDownload` 对非 400 的失败一律关掉弹窗（400 是「口令不合格」，弹窗正是改它的地方） |
+| D40 | **首次设置密钥库口令时，顺手把该账号已有的明文私钥一并加密** | agent 默认 | 原来只有 `manage.py rewrap_keys` 会做，于是「设了口令却仍有一堆明文私钥」成了默认结局。口令一存在，明文就是那个需要解释的状态。实现上抽成 `keys.wrap_legacy_keys()`，管理命令与 `api_vault_unseal` 共用；逐条失败只记账不抛错（一条坏行不该让解锁失败）。审计日志写 `Vault unsealed (first time; encrypted N existing private key(s))` |
+| D41 | 开发种子**不再预置 admin 的密钥库口令**：`seed_screenshots.py` 之后跑 `.scratch/unvault_demo.py`（解包成明文 + 删根密钥 + 重启 dev server） | 用户要求 | 建 CA 必须解锁密钥库，所以种子脚本必然会替 admin 设一个口令——于是登录后弹的是「验证密钥库口令」，而用户要看的是「设置密钥库口令」（README 描述的首启流程）。改成种子后清空：admin 无口令、演示私钥为明文（卡片显示「密钥未加密」徽标），**第一次创建 CA 时弹「设置密钥库口令」，设完 D40 当场把 5 把明文私钥加密、徽标消失**。截图仍取自加密态，故 README 配图不变 |
 
 > 顺带修掉一个真 bug：`api/client.js` 的 `download()` 只接受 `FormData`，传普通对象时请求体变成字符串 `"[object Object]"`，后端一律 400——**未加密私钥导出在浏览器里其实是失败的**，只有把文件真的落到磁盘才发现。现在 `download()` 与 `request()` 用同一套 body 规则。
 >
@@ -110,7 +113,7 @@
 | --- | --- | --- | --- |
 | D17 | Vite 产物改为**内容哈希**命名（`assets/[name]-[hash].js|css`） | 用户要求 | 此前产物名固定为 `app.js`，重建后浏览器仍用缓存，新界面必须硬刷新才出现；哈希后旧 URL 直接 404，不可能再命中陈旧缓存（`index.html` 由 Vite 生成并带哈希名，Django 的 `spa_index` 直接渲染它，所以不需要 manifest） |
 | D18 | README 配图全部换成 fork 后的真实界面：无头 Chrome 截取、**1920×1080**、存 `screenshots/`，并删除 4 张上游旧图 | 用户要求 | 旧图是上游 django+bootstrap 模板时代的界面，其中一张还是与本项目无关的 Safari/AdGuard 截图。新图为 `hierarchy-light`（首图）、`create-ca`、`create-leaf`、`import`、`hierarchy-dark` |
-| D19 | 截图用的演示数据建在 dev 库里：**`admin`** + `Homelab Root CA` → `Homelab Services Intermediate CA` → 3 张叶证书（`grafana` 已吊销）；脚本以 staff 身份运行时**先清空整个盘面** | agent（属主 2026-10-04 由 `bob` 改为 `admin`） | 需要「私钥已加密」的真实观感。属主改成 `admin` 是因为验收者用自己登录的账号就该能直接导出私钥，不必切到第二个账号去找口令；密钥库口令见 D38。`is_staff` 时清空全部是为了**可复现**——残留别人的根，截图就变成另一张图了 |
+| D19 | 截图用的演示数据建在 dev 库里：**`admin`** + `Homelab Root CA` → `Homelab Services Intermediate CA` → 3 张叶证书（`grafana` 已吊销）；脚本以 staff 身份运行时**先清空整个盘面** | agent（属主 2026-10-04 由 `bob` 改为 `admin`） | 需要「私钥已加密」的真实观感。属主改成 `admin` 是因为验收者用自己登录的账号就该能直接导出私钥，不必切到第二个账号去找口令；密钥库口令的处理见 D19 之后新增的 D41（种子跑完要 `unvault`）。`is_staff` 时清空全部是为了**可复现**——残留别人的根，截图就变成另一张图了 |
 
 > 本轮发现一个真实的**开发流程陷阱**（已写进 README 的开发步骤）：Django 5.2 默认使用
 > **cached template loader**，依赖 autoreload 在模板文件变化时清缓存；而本项目的 devctl 命令是

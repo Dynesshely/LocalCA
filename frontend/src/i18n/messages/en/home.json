@@ -87,7 +87,8 @@
         "key": "PKCS#8, protected by a password you choose",
         "key-plain": "PKCS#8, no password — for nginx and friends",
         "pair-zip": "Certificate, unencrypted key and chain together"
-      }
+      },
+      "notYours": "Another account's key — only that account can export it."
     }
   }
 }

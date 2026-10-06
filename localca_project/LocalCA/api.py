@@ -55,6 +55,7 @@ from .keys import (
     private_key_pem,
     rewrap_root_key,
     root_key_for,
+    wrap_legacy_keys,
     store_wrapped_key,
     vault_status,
 )
@@ -385,6 +386,9 @@ def api_vault_unseal(request):
     if not password:
         return _error(_('A vault password is required.'))
 
+    # Nothing has been chosen for this account yet: this unlock *is* the setup.
+    first_time = not VaultRootKey.objects.filter(user_id=request.user.id).exists()
+
     try:
         ensure_root_key(request.user.id, password)
     except VaultPasswordError:
@@ -395,8 +399,22 @@ def api_vault_unseal(request):
     except VaultError as exc:
         return _error(_('Could not open the vault: %(error)s') % {'error': exc})
 
-    AuditLog.objects.create(
-        action='ACCESS', performed_by=request.user, details='Vault unsealed')
+    # Setting a password is the moment the account stops having cleartext keys.
+    # Leaving them that way until somebody remembers `manage.py rewrap_keys` is
+    # the surprising outcome, so they are wrapped now.
+    encrypted_now = 0
+    if first_time:
+        encrypted_now, failures = wrap_legacy_keys(
+            request.user.id, root_key_for(request.user))
+        details = 'Vault unsealed (first time'
+        details += f'; encrypted {encrypted_now} existing private key(s)'
+        details += f', {len(failures)} failed)' if failures else ')'
+        AuditLog.objects.create(
+            action='ACCESS', performed_by=request.user, details=details)
+    else:
+        AuditLog.objects.create(
+            action='ACCESS', performed_by=request.user, details='Vault unsealed')
+
     status = vault_status(request.user.id)
     return _ok({
         'unsealed': True,
@@ -404,6 +422,7 @@ def api_vault_unseal(request):
         'wrapped': status['wrapped'],
         'plaintext': status['plaintext'],
         'orphaned': status['orphaned'],
+        'encrypted_existing': encrypted_now,
     })
 
 
@@ -974,7 +993,11 @@ def _download_private(request, cert, spec):
     if not request.user.is_authenticated:
         return _error(_('Authentication required.'), status=401)
     if not can_manage_certificate(request.user, cert):
-        raise PermissionDenied('You do not have permission')
+        # A JSON refusal, not Django's HTML 403 page: the client can then show the
+        # sentence instead of "download failed with status 403".
+        return _error(
+            _('You can only export the private key of a certificate you own.'),
+            status=403)
     if not is_owner(request.user, cert) and is_wrapped(cert):
         # Staff may revoke and delete somebody else's certificate, but they can
         # never read its key: the vault root key is per account and there is no

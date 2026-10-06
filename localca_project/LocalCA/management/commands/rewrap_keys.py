@@ -12,18 +12,7 @@ single unreadable row cannot block the rest.
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 
-from LocalCA.keys import ensure_root_key, store_wrapped_key, vault_status
-from LocalCA.models import (
-    IntermediateCertificate,
-    LeafCertificate,
-    RootCertificate,
-)
-
-KINDS = (
-    ('root', RootCertificate),
-    ('intermediate', IntermediateCertificate),
-    ('leaf', LeafCertificate),
-)
+from LocalCA.keys import ensure_root_key, vault_status, wrap_legacy_keys
 
 
 class Command(BaseCommand):
@@ -68,22 +57,13 @@ class Command(BaseCommand):
 
         root_key = ensure_root_key(user.id, password)
 
-        wrapped = failed = 0
-        for kind, model in KINDS:
-            # Snapshot the ids: wrapping a row changes the filter this loop uses.
-            pending_ids = list(
-                model.objects.filter(created_by=user, private_key_wrapped__isnull=True)
-                .exclude(private_key_encrypted='')
-                .values_list('id', flat=True))
-            for cert_id in pending_ids:
-                cert = model.objects.get(pk=cert_id)
-                try:
-                    self._wrap(cert, kind, root_key)
-                    wrapped += 1
-                except Exception as exc:  # noqa: BLE001 - report, keep going
-                    failed += 1
-                    self.stderr.write(self.style.ERROR(
-                        f'  {kind} {cert_id} ({cert.serial_number}): {exc}'))
+        # The same sweep also runs on first-time setup (see api_vault_unseal);
+        # this command is the retry path for whatever could not be wrapped then.
+        wrapped, failures = wrap_legacy_keys(user.id, root_key)
+        for kind, cert, exc in failures:
+            self.stderr.write(self.style.ERROR(
+                f'  {kind} {cert.pk} ({cert.serial_number}): {exc}'))
+        failed = len(failures)
 
         after = vault_status(user.id)
         self.stdout.write(self.style.SUCCESS(
@@ -103,10 +83,3 @@ class Command(BaseCommand):
                 f'from). Assign an owner or delete them; they remain readable as '
                 f'plaintext until then. Run `manage.py vault_status` to see them.'))
 
-    def _wrap(self, cert, kind, root_key):
-        pem = cert.private_key_encrypted
-        if not pem:
-            raise ValueError('no plaintext key to wrap')
-        # store_wrapped_key encrypts and clears the plaintext column in one
-        # transaction, so a crash cannot leave the certificate keyless.
-        store_wrapped_key(cert, kind, pem, root_key)

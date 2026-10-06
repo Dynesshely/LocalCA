@@ -145,6 +145,52 @@ def store_wrapped_key(cert, kind: str, pem: str, root_key: bytes) -> None:
         cert.save(update_fields=['private_key_wrapped', 'private_key_encrypted'])
 
 
+#: Certificate kind -> model, for the sweep that encrypts existing cleartext keys.
+#: Imported lazily inside the function so this module stays importable from
+#: migrations and from the models themselves.
+def _kinds():
+    from .models import (
+        IntermediateCertificate,
+        LeafCertificate,
+        RootCertificate,
+    )
+    return (('root', RootCertificate),
+            ('intermediate', IntermediateCertificate),
+            ('leaf', LeafCertificate))
+
+
+def pending_legacy_keys(user_id: int):
+    '''``(kind, cert)`` for every plaintext key this account still owns.'''
+    pairs = []
+    for kind, model in _kinds():
+        rows = (model.objects
+                .filter(created_by_id=user_id, private_key_wrapped__isnull=True)
+                .exclude(private_key_encrypted=''))
+        pairs.extend((kind, cert) for cert in rows)
+    return pairs
+
+
+def wrap_legacy_keys(user_id: int, root_key: bytes):
+    '''
+    Encrypt every plaintext key this account owns.
+
+    Returns `(wrapped_count, failures)`, where a failure is a
+    `(kind, certificate, exception)` triple. Called when an account creates its
+    vault password: the moment a password exists, leaving keys in cleartext is
+    the surprising state, not the safe one. A row that cannot be wrapped is
+    reported rather than raised -- one unreadable certificate must not fail the
+    unlock that triggered the sweep, and `manage.py rewrap_keys` retries.
+    '''
+    wrapped, failures = 0, []
+    for kind, cert in pending_legacy_keys(user_id):
+        try:
+            store_wrapped_key(cert, kind, cert.private_key_encrypted, root_key)
+            wrapped += 1
+        except Exception as exc:  # noqa: BLE001 - reported by the caller, never fatal
+            failures.append((kind, cert, exc))
+    return wrapped, failures
+
+
 def has_private_key(cert) -> bool:
     '''
     Whether any private key is stored for this certificate, wrapped or legacy.
