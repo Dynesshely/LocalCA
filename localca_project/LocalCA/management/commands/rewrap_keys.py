@@ -12,7 +12,14 @@ single unreadable row cannot block the rest.
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 
-from LocalCA.keys import ensure_root_key, vault_status, wrap_legacy_keys
+from LocalCA.keys import (
+    create_credential,
+    credentials_for,
+    default_credential,
+    unlock_credential,
+    vault_status,
+    wrap_legacy_keys,
+)
 
 
 class Command(BaseCommand):
@@ -22,6 +29,10 @@ class Command(BaseCommand):
         parser.add_argument(
             '--username', required=True,
             help='Account whose keys should be wrapped.')
+        parser.add_argument(
+            '--credential', default=None,
+            help='Name of the keystore credential to wrap them with. Defaults to '
+                 "the account's default credential.")
         parser.add_argument(
             '--password', default=None,
             help='Vault password. Omit to be prompted (recommended: it stays out '
@@ -34,6 +45,7 @@ class Command(BaseCommand):
         username = options['username']
         password = options['password']
         dry_run = options['dry_run']
+        credential_name = options['credential']
 
         try:
             user = User.objects.get(username=username)
@@ -55,11 +67,29 @@ class Command(BaseCommand):
             self.stdout.write(self.style.WARNING('Dry run: nothing written.'))
             return
 
-        root_key = ensure_root_key(user.id, password)
+        credential = None
+        if credential_name:
+            credential = next(
+                (c for c in credentials_for(user) if c.name == credential_name), None)
+            if credential is None:
+                raise CommandError(
+                    f'No keystore credential named {credential_name!r} for {username}.')
+        else:
+            credential = default_credential(user)
+        if credential is None:
+            # A fresh account with cleartext keys is exactly what this command is
+            # for, so it makes the credential rather than sending the operator to
+            # the web interface first.
+            credential = create_credential(user, credential_name or 'Default',
+                                           password)
+        else:
+            unlock_credential(credential, password)
+        self.stdout.write(f'Credential: {credential.name}')
 
-        # The same sweep also runs on first-time setup (see api_vault_unseal);
-        # this command is the retry path for whatever could not be wrapped then.
-        wrapped, failures = wrap_legacy_keys(user.id, root_key)
+        # The same sweep also runs when a credential is created with
+        # `encrypt_existing`; this command is the retry path for whatever failed
+        # then, and a way to sweep from a shell.
+        wrapped, failures = wrap_legacy_keys(user.id, credential)
         for kind, cert, exc in failures:
             self.stderr.write(self.style.ERROR(
                 f'  {kind} {cert.pk} ({cert.serial_number}): {exc}'))

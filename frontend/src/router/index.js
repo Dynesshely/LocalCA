@@ -30,6 +30,12 @@ const routes = [
     meta: { requiresAuth: true, titleKey: 'common.nav.createLeaf' },
   },
   {
+    path: '/keystore',
+    name: 'keystore',
+    component: () => import('@/views/KeystoreView.vue'),
+    meta: { requiresAuth: true, titleKey: 'common.nav.keystore' },
+  },
+  {
     path: '/import',
     name: 'import',
     component: () => import('@/views/ImportView.vue'),

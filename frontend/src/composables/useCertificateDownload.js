@@ -17,7 +17,7 @@ import { useI18n } from 'vue-i18n'
 import { files } from '@/api'
 import { ApiError } from '@/api/client'
 import { useAuthStore } from '@/stores/auth'
-import { useVaultStore } from '@/stores/vault'
+import { useKeystoreStore } from '@/stores/keystore'
 import { useToastStore } from '@/stores/toasts'
 
 /** How each format is fetched, keyed by the ids the server advertises. */
@@ -42,7 +42,7 @@ export const DOWNLOAD_FALLBACK_NAMES = {
 export function useCertificateDownload() {
   const { t } = useI18n()
   const auth = useAuthStore()
-  const vault = useVaultStore()
+  const keystore = useKeystoreStore()
   const toasts = useToastStore()
 
   /** The format whose dialog is open, or null. */
@@ -96,12 +96,15 @@ export function useCertificateDownload() {
       if (err instanceof ApiError && err.vaultLocked) {
         // Close this dialog before raising the unlock one. The operator has
         // already answered it -- the password or the confirmation is in `body` --
-        // and two stacked dialogs is a worse question than one.
+        // and two stacked dialogs is a worse question than one. The credential to
+        // open comes from the server: it is the one that wraps this very key.
         pendingFormat.value = null
         const target = certificate
-        vault.requestUnlock(
-          t('home.download.unlockReason', { name: certificateName(certificate) }),
-          () => run(target, formatId, body))
+        keystore.requestUnlock({
+          reason: t('home.download.unlockReason', { name: certificateName(certificate) }),
+          credentialId: err.credentialId,
+          retry: () => run(target, formatId, body),
+        })
         return
       }
       // A refusal the dialog cannot answer -- not your certificate, no vault, no

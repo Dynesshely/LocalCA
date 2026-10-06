@@ -43,6 +43,21 @@ export class ApiError extends Error {
     return this.status === 409 && this.payload?.vault_locked === true
   }
 
+  /**
+   * Which credential the refused key belongs to.
+   *
+   * The server knows and the client cannot guess: an account may hold several
+   * credentials, so "the vault is locked" is not actionable without knowing
+   * whose password to ask for. Null means the account has none yet.
+   */
+  get credentialId() {
+    return this.payload?.credential_id ?? null
+  }
+
+  get credentialName() {
+    return this.payload?.credential_name ?? null
+  }
+
   /** The first validation message for a field, or an empty string. */
   fieldError(name) {
     const messages = this.fieldErrors[name]

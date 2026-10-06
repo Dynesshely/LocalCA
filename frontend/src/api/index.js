@@ -18,21 +18,46 @@ export const meta = {
 }
 
 /**
- * Private keys are encrypted at rest, so using one requires the vault to be open.
- * The password is sent once per unlock and is never stored by the client.
+ * The keystore: named credentials, each a password wrapping one root key.
+ *
+ * A private key names the credential that wraps it, so "which password?" has an
+ * answer that is not "the account's". Passwords are sent once per unlock and are
+ * never stored by the client.
  */
-export const vault = {
-  status: () => request('/api/vault/status/'),
-  unseal: (vaultPassword) =>
-    request('/api/vault/unseal/', {
+export const keystore = {
+  get: () => request('/api/keystore/'),
+  create: (name, vaultPassword, { encryptExisting = true } = {}) =>
+    request('/api/keystore/credentials/', {
+      method: 'POST',
+      body: {
+        name,
+        vault_password: vaultPassword,
+        encrypt_existing: encryptExisting ? 'true' : 'false',
+      },
+    }),
+  unlock: (id, vaultPassword) =>
+    request(`/api/keystore/credentials/${id}/unlock/`, {
       method: 'POST',
       body: { vault_password: vaultPassword },
     }),
-  lock: () => request('/api/vault/lock/', { method: 'POST' }),
-  rotate: (oldPassword, newPassword) =>
-    request('/api/vault/password/', {
+  lock: (id) => request(`/api/keystore/credentials/${id}/lock/`, { method: 'POST' }),
+  lockAll: () => request('/api/keystore/lock/', { method: 'POST' }),
+  changePassword: (id, oldPassword, newPassword) =>
+    request(`/api/keystore/credentials/${id}/password/`, {
       method: 'POST',
       body: { old_password: oldPassword, new_password: newPassword },
+    }),
+  rename: (id, name) =>
+    request(`/api/keystore/credentials/${id}/rename/`, { method: 'POST', body: { name } }),
+  setDefault: (id) =>
+    request(`/api/keystore/credentials/${id}/default/`, { method: 'POST' }),
+  remove: (id) =>
+    request(`/api/keystore/credentials/${id}/delete/`, { method: 'POST' }),
+  /** Encrypt one certificate's key with a credential, or move it to another. */
+  assign: (credentialId, kind, id) =>
+    request('/api/keystore/assign/', {
+      method: 'POST',
+      body: { credential_id: credentialId, kind, id },
     }),
 }
 

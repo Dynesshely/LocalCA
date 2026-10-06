@@ -23,7 +23,7 @@ from django.test import SimpleTestCase, TestCase
 
 from . import import_service, importers
 from .ca import CertificateAuthority
-from .keys import ensure_root_key, is_wrapped
+from .keys import create_credential, default_credential, is_wrapped, unlock_credential
 from .vault import unsealed
 from .models import (
     AuditLog,
@@ -369,7 +369,17 @@ class ImportTestBase(TestCase):
         self.client.force_login(self.user)
 
     def unseal(self, user=None):
-        return ensure_root_key((user or self.user).id, self.VAULT_PASSWORD)
+        '''Open (or create) the account's credential, and return it.
+
+        Imports wrap their keys with a *credential* rather than a bare root key, so
+        this helper returns the object a plan needs.
+        '''
+        account = user or self.user
+        credential = default_credential(account)
+        if credential is None:
+            return create_credential(account, 'Import test', self.VAULT_PASSWORD)
+        unlock_credential(credential, self.VAULT_PASSWORD)
+        return credential
 
     def plan(self, sources, password=None, user=None, overrides=None):
         bundle = importers.parse_sources(sources, password=password)

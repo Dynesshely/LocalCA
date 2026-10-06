@@ -16,6 +16,57 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
+msgid "%(count)s private key(s) are still encrypted with "%(name)s". Move them to another credential first."
+msgstr "还有 %(count)s 个私钥用“%(name)s”加密，请先把它们换到其他凭证下。"
+
+msgid "A credential name is required."
+msgstr "必须填写凭证名称。"
+
+msgid "A credential with that name already exists."
+msgstr "已存在同名凭证。"
+
+msgid "A vault password of at least 8 characters is required."
+msgstr "必须设置至少 8 位的密钥库口令。"
+
+msgid "Certificate not found."
+msgstr "找不到该证书。"
+
+msgid "Could not open the credential: %(error)s"
+msgstr "无法打开该凭证：%(error)s"
+
+msgid "Default"
+msgstr "默认"
+
+msgid "No keystore credential exists yet, so private keys cannot be stored. Create one (a name and a password) first."
+msgstr "还没有任何密钥库凭证，无法保存私钥。请先创建一个（名称 + 口令）。"
+
+msgid "No keystore credential was given, so the private key cannot be stored."
+msgstr "未指定密钥库凭证，无法保存私钥。"
+
+msgid "The keystore credential "%(name)s" is locked. Open it to export this private key."
+msgstr "密钥库凭证“%(name)s”处于锁定状态，导出该私钥前请先解锁它。"
+
+msgid "The keystore credential "%(name)s" is locked. Open it to store the private key that is about to be created."
+msgstr "密钥库凭证“%(name)s”处于锁定状态，保存即将生成的私钥前请先解锁它。"
+
+msgid "The keystore credential "%(name)s" is locked. Open it to store the private keys carried by this import."
+msgstr "密钥库凭证“%(name)s”处于锁定状态，保存本次导入携带的私钥前请先解锁它。"
+
+msgid "The keystore credential "%(name)s" is locked."
+msgstr "密钥库凭证“%(name)s”处于锁定状态。"
+
+msgid "The new vault password must be at least 8 characters."
+msgstr "新的密钥库口令至少 8 位。"
+
+msgid "This keystore credential is locked."
+msgstr "该密钥库凭证处于锁定状态。"
+
+msgid "This private key is no longer linked to a credential, so nothing can unwrap it."
+msgstr "该私钥已不再关联任何凭证，无法解密。"
+
+msgid "Unknown certificate kind."
+msgstr "未知的证书类型。"
+
 msgid "\"%(name)s\" is already in use by another certificate. Certificate names must be unique."
 msgstr "“%(name)s”已被另一张证书占用。证书名称必须唯一。"
 
@@ -100,9 +151,6 @@ msgstr "中间 CA 必须指定其根 CA。"
 msgid "Attach at least one file to import."
 msgstr "请至少附加一个文件再导入。"
 
-msgid "Authentication is required to use private keys."
-msgstr "使用私钥需要先登录。"
-
 msgid "Authentication required."
 msgstr "需要登录。"
 
@@ -129,12 +177,6 @@ msgstr "无法修改密钥库口令：%(error)s"
 
 msgid "Could not create the certificate: %(error)s"
 msgstr "无法创建证书：%(error)s"
-
-msgid "Could not open the vault: %(error)s"
-msgstr "无法打开密钥库：%(error)s"
-
-msgid "Create a vault password before generating CA keys: certificate private keys are stored encrypted and the vault is locked."
-msgstr "生成 CA 密钥前请先设置密钥库口令：证书私钥以加密方式存储，而当前密钥库处于锁定状态。"
 
 msgid "Exporting an unprotected private key has to be confirmed: resend with confirm=true, or choose a password-protected format instead."
 msgstr "导出未加密私钥需要明确确认：请带 confirm=true 重新请求，或改用有口令保护的格式。"
@@ -244,9 +286,6 @@ msgstr "签发者证书已不存在。"
 msgid "The issuing certificate was not imported, so this one cannot be either."
 msgstr "签发者证书未导入，因此这张也无法导入。"
 
-msgid "The new vault password must be at least 12 characters."
-msgstr "新的密钥库口令至少需要 12 个字符。"
-
 msgid "The overrides field must be a JSON object."
 msgstr "overrides 字段必须是 JSON 对象。"
 
@@ -264,24 +303,6 @@ msgstr "提交的数据不合法。"
 
 msgid "The upload exceeds the %(limit)s MiB total limit."
 msgstr "上传内容超过 %(limit)s MiB 的总量上限。"
-
-msgid "The vault is locked for this account."
-msgstr "该账号的密钥库处于锁定状态。"
-
-msgid "The vault is locked, so the private key cannot be stored."
-msgstr "密钥库已锁定，无法保存私钥。"
-
-msgid "The vault is locked. Unlock it to export this private key."
-msgstr "密钥库已锁定，导出该私钥前请先解锁。"
-
-msgid "The vault is locked. Unlock it to sign with this intermediate CA."
-msgstr "密钥库已锁定，使用该中间 CA 签发前请先解锁。"
-
-msgid "The vault is locked. Unlock it to sign with this root CA."
-msgstr "密钥库已锁定，使用该根 CA 签发前请先解锁。"
-
-msgid "The vault is locked. Unlock it to store the private keys carried by this import."
-msgstr "密钥库已锁定，保存本次导入携带的私钥前请先解锁。"
 
 msgid "The vault password does not match the unlock."
 msgstr "密钥库口令与解锁时使用的不一致。"

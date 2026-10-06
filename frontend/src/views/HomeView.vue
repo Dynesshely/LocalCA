@@ -18,14 +18,14 @@ import ExportDialog from '@/components/ExportDialog.vue'
 import { useCertificateDownload } from '@/composables/useCertificateDownload'
 import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
-import { useVaultStore } from '@/stores/vault'
+import { useKeystoreStore } from '@/stores/keystore'
 import { useToastStore } from '@/stores/toasts'
 import { ApiError } from '@/api/client'
 
 const { t } = useI18n()
 const auth = useAuthStore()
 const certificates = useCertificatesStore()
-const vault = useVaultStore()
+const keystore = useKeystoreStore()
 const toasts = useToastStore()
 const router = useRouter()
 
@@ -73,7 +73,7 @@ const totalCount = computed(() => certificates.flat.length)
 
 onMounted(async () => {
   try {
-    await Promise.all([certificates.load(), vault.load()])
+    await Promise.all([certificates.load(), keystore.load()])
   } catch (err) {
     toasts.error(t('common.error.couldNotLoadCertificates', { message: err.message }))
   }

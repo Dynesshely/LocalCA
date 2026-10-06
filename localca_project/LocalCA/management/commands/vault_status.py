@@ -8,7 +8,8 @@ material.
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand, CommandError
 
-from LocalCA.keys import vault_status
+from LocalCA.keys import credentials_for, vault_status
+from LocalCA.vault import unsealed
 from LocalCA.vault import idle_timeout
 from LocalCA.models import IntermediateCertificate, LeafCertificate, RootCertificate
 
@@ -40,16 +41,25 @@ class Command(BaseCommand):
         report = vault_status(user.id if user else None)
 
         if user:
-            state = 'unsealed' if report['unsealed'] else 'locked'
-            remaining = report['unseal_remaining_seconds']
-            self.stdout.write(f'Vault for {username}: {state}')
-            if report['unsealed']:
-                self.stdout.write(
-                    f'  auto-locks after {idle_timeout()}s idle '
-                    f'({remaining}s remaining)')
-            if not report['has_root_key']:
+            self.stdout.write(f'Keystore credentials for {username}:')
+            credentials = list(credentials_for(user))
+            if not credentials:
                 self.stdout.write(self.style.WARNING(
-                    '  No vault password has been set for this account yet.'))
+                    '  none yet -- private keys cannot be encrypted for this '
+                    'account until one is created'))
+            for credential in credentials:
+                unlocked = unsealed.is_unsealed(credential.id)
+                state = 'unlocked' if unlocked else 'locked'
+                remaining = unsealed.remaining_seconds(credential.id)
+                marks = []
+                if credential.is_default:
+                    marks.append('default')
+                self.stdout.write(
+                    f'  [{"x" if unlocked else " "}] {credential.name}'
+                    f'  ({state}'
+                    + (f', {remaining}s left, auto-locks after {idle_timeout()}s idle'
+                       if unlocked else '')
+                    + (f')  {", ".join(marks)}' if marks else ')'))
         else:
             self.stdout.write('Vault status (all accounts)')
 

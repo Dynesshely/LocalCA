@@ -10,6 +10,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DownloadMenu from '@/components/DownloadMenu.vue'
+import AppIcon from '@/components/AppIcon.vue'
 
 const props = defineProps({
   certificate: { type: Object, required: true },
@@ -148,6 +149,21 @@ function formatExpiry() {
           :title="t('home.badge.keyNotEncryptedTitle')"
         >
           {{ t('home.badge.keyNotEncrypted') }}
+        </span>
+
+        <!-- Which credential wraps this key, and whether it is open right now.
+             An account can hold several passwords, so "encrypted" alone does not
+             say which one to reach for. -->
+        <span
+          v-if="certificate.key_credential"
+          class="inline-flex items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
+          :class="certificate.key_credential.unlocked
+            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+            : 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'"
+          :data-testid="`credential-chip-${certificate.kind}-${certificate.id}`"
+        >
+          <AppIcon name="shield" class="size-3" />
+          {{ t('home.badge.credential', { name: certificate.key_credential.name }) }}
         </span>
 
         <template v-if="certificate.can_manage">

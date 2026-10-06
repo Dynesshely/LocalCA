@@ -489,7 +489,7 @@ def _resolve_import_parents(plan, item_by_fingerprint) -> None:
 # Applying
 # --------------------------------------------------------------------------
 
-def apply_plan(plan: ImportPlan, user, root_key=None) -> dict:
+def apply_plan(plan: ImportPlan, user, credential=None) -> dict:
     '''
     Write the plan.
 
@@ -512,12 +512,13 @@ def apply_plan(plan: ImportPlan, user, root_key=None) -> dict:
             continue
         if item.action in (CONFLICT, UNSUPPORTED):
             continue
-        if item.will_store_key and root_key is None:
+        if item.will_store_key and credential is None:
             summary['failed'].append({
                 'fingerprint': item.fingerprint,
                 'name': item.name,
                 'error': _(
-                    'The vault is locked, so the private key cannot be stored.'),
+                    'No keystore credential was given, so the private key '
+                    'cannot be stored.'),
             })
             continue
         try:
@@ -527,13 +528,13 @@ def apply_plan(plan: ImportPlan, user, root_key=None) -> dict:
                     if obj is None:
                         raise PlanError(
                             _('The certificate disappeared while importing.'))
-                    keys.store_wrapped_key(obj, item.kind, item.key.pem, root_key)
+                    keys.store_wrapped_key(obj, item.kind, item.key.pem, credential)
                     summary['keys_attached'] += 1
                 else:
                     parent_obj = _parent_object(item, created_by_fingerprint)
                     obj = _create_certificate(item, user, parent_obj)
                     if item.key is not None:
-                        keys.store_wrapped_key(obj, item.kind, item.key.pem, root_key)
+                        keys.store_wrapped_key(obj, item.kind, item.key.pem, credential)
                         summary['keys_wrapped'] += 1
                     summary['created'][item.kind] += 1
                 created_by_fingerprint[item.fingerprint] = obj

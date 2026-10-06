@@ -61,6 +61,27 @@
       "preparing": "准备中……",
       "show": "显示",
       "hide": "隐藏"
+    },
+    "keystore": {
+      "title": {
+        "open": "解锁密钥库凭证",
+        "create": "创建密钥库凭证"
+      },
+      "openIntro": "私钥以加密形式存储。请输入凭证「{name}」的口令，以使用它包裹的私钥。",
+      "createIntro": "该账号还没有任何密钥库凭证，私钥无法以加密形式保存。请为第一个凭证设置名称与口令。",
+      "noRecovery": "无法找回。",
+      "noRecoveryWarning": "{lead} 一旦忘记这个口令，该凭证下的所有私钥都会永久无法解密（包括 CA 私钥）。管理员也无法重置。",
+      "nameLabel": "凭证名称",
+      "password": "口令",
+      "choosePassword": "设置口令",
+      "passwordPlaceholder": "至少 8 位",
+      "passwordHelp": "不会以任何形式存储，连哈希都不存：它只在这一刻用于解开密钥。",
+      "encryptExisting": "同时把该账号仍然以明文保存的 {count} 把私钥一并加密。",
+      "submitOpen": "解锁",
+      "submitCreate": "创建并解锁",
+      "error": "该口令无法使用。",
+      "defaultName": "凭证 {count}",
+      "nameHelp": "取一个以后能认出来的名字，例如「生产」或「实验环境」。"
     }
   }
 }

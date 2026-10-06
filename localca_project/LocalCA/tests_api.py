@@ -73,26 +73,43 @@ class ApiTestBase(TestCase):
             signed_by_intermediate=cls.intermediate,
             valid_until=leaf_data['valid_until'], created_by=cls.owner)
 
-    #: The password used to unseal the vault in tests. Chosen to exceed the
-    #: minimum length the rotate endpoint enforces.
+    #: The password used to open a test credential. Chosen to exceed the
+    #: minimum length the endpoints enforce.
     VAULT_PASSWORD = 'vault-test-password-123'
 
     def setUp(self):
-        # Unseal the owner's vault for each test. The unsealed key store is
+        # Open the owner's credential for each test. The unsealed key store is
         # process-global, so it must be set per test rather than in
         # setUpTestData (which runs in its own transaction).
         super().setUp()
         self.unseal_vault(self.owner, self.VAULT_PASSWORD)
 
     @classmethod
+    def credential_for(cls, user, name='Test credential'):
+        '''The account's default credential, created on first use.'''
+        from LocalCA.keys import create_credential, default_credential
+        credential = default_credential(user)
+        if credential is None:
+            credential = create_credential(user, name, cls.VAULT_PASSWORD)
+        return credential
+
+    @classmethod
     def unseal_vault(cls, user, password=None):
-        from LocalCA.keys import ensure_root_key
-        return ensure_root_key(user.id, password or cls.VAULT_PASSWORD)
+        '''Return the credential this test should treat as "the vault".'''
+        from LocalCA.keys import create_credential, default_credential, unlock_credential
+        credential = default_credential(user)
+        if credential is None:
+            return create_credential(user, 'Test credential',
+                                     password or cls.VAULT_PASSWORD)
+        unlock_credential(credential, password or cls.VAULT_PASSWORD)
+        return credential
 
     @classmethod
     def lock_vault(cls, user):
+        from LocalCA.keys import credentials_for
         from LocalCA.vault import unsealed
-        unsealed.lock(user.id)
+        for credential in credentials_for(user):
+            unsealed.lock(credential.id)
 
     def post_json(self, url, payload):
         return self.client.post(url, data=json.dumps(payload),
@@ -163,51 +180,215 @@ class SessionApiTests(ApiTestBase):
         self.assertEqual(payload['max_validity_days']['root'], 7300)
 
 
-class VaultApiTests(ApiTestBase):
-    '''
-    The vault endpoints, and the first-time sweep that goes with choosing a
-    password: an account that had cleartext keys must not keep them.
-    '''
+class KeystoreApiTests(ApiTestBase):
+    """
+    The keystore endpoints: named credentials, and the keys they wrap.
 
-    def test_first_unlock_encrypts_the_keys_the_account_already_had(self):
-        from .keys import is_legacy_plaintext, is_wrapped
-        from .models import VaultRootKey
+    The rule this class exists to pin down is that a credential is a *named
+    password*, so an account can hold several, each opened on its own, and every
+    private key names the one that wraps it.
+    """
 
-        user = User.objects.create_user('vault-newbie', password='pw-Newbie-123')
-        cert = LeafCertificate.objects.create(
-            common_name='newbie.internal', san='newbie.internal',
-            serial_number='99112233', public_key=self.leaf.public_key,
-            private_key_encrypted=self.leaf.private_key_encrypted,
-            signed_by_intermediate=self.intermediate,
-            valid_until=self.leaf.valid_until, created_by=user)
-        self.assertFalse(VaultRootKey.objects.filter(user=user).exists())
-        self.assertTrue(is_legacy_plaintext(cert))
-
-        self.client.login(username='vault-newbie', password='pw-Newbie-123')
-        response = self.post_json(reverse('api:vault_unseal'),
-                                  {'vault_password': 'chosen-just-now-123'})
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['encrypted_existing'], 1)
-
-        cert.refresh_from_db()
-        self.assertTrue(is_wrapped(cert))
-        self.assertEqual(cert.private_key_encrypted, '')
-        # The stored form is the encrypted envelope, never the PEM.
-        self.assertNotIn('PRIVATE KEY', cert.private_key_wrapped)
-        self.assertTrue(VaultRootKey.objects.filter(user=user).exists())
-
-        # Unlocking again is not a setup, and says so rather than repeating the
-        # sweep count.
-        self.client.post(reverse('api:vault_lock'))
-        again = self.post_json(reverse('api:vault_unseal'),
-                               {'vault_password': 'chosen-just-now-123'})
-        self.assertEqual(again.status_code, 200)
-        self.assertEqual(again.json()['encrypted_existing'], 0)
-
-    def test_a_wrong_password_after_setup_is_a_json_403(self):
-        self.lock_vault(self.owner)
+    def login(self):
         self.client.login(username='api-owner', password='pw-Owner-123')
-        response = self.post_json(reverse('api:vault_unseal'),
+
+    def test_the_page_lists_credentials_and_every_key_with_its_state(self):
+        self.login()
+        payload = self.client.get('/api/keystore/').json()
+        self.assertEqual([c['name'] for c in payload['credentials']],
+                         [self.credential_for(self.owner).name])
+        self.assertTrue(payload['credentials'][0]['is_default'])
+        self.assertEqual(payload['counts']['plaintext'], 3)   # the fixture's keys
+        self.assertEqual([k['kind'] for k in payload['keys']],
+                         ['root', 'intermediate', 'leaf'])
+        self.assertTrue(all(k['status'] == 'plaintext' for k in payload['keys']))
+
+    def test_keystore_requires_authentication(self):
+        self.assertEqual(self.client.get('/api/keystore/').status_code, 401)
+        self.assertEqual(
+            self.client.post('/api/keystore/credentials/',
+                             {'name': 'x', 'vault_password': 'password-1'}).status_code,
+            401)
+
+    def test_credentials_need_a_name_and_a_long_enough_password(self):
+        self.login()
+        for payload in ({'vault_password': 'password-1'},          # no name
+                        {'name': 'Prod'},                          # no password
+                        {'name': 'Prod', 'vault_password': 'short'}):
+            with self.subTest(payload=payload):
+                response = self.post_json('/api/keystore/credentials/', payload)
+                self.assertEqual(response.status_code, 400)
+
+    def test_creating_a_second_credential_leaves_the_first_alone(self):
+        self.login()
+        first = self.credential_for(self.owner)
+        response = self.post_json(
+            '/api/keystore/credentials/',
+            {'name': 'Production', 'vault_password': 'other-pw-123'})
+        self.assertEqual(response.status_code, 201)
+        again = self.post_json(
+            '/api/keystore/credentials/',
+            {'name': 'Production', 'vault_password': 'other-pw-123'})
+        self.assertEqual(again.status_code, 400)   # names are unique per account
+
+        payload = self.client.get('/api/keystore/').json()
+        names = sorted(c['name'] for c in payload['credentials'])
+        self.assertEqual(names, sorted([first.name, 'Production']))
+        # The first one created stays the default: making a credential is not a
+        # promotion.
+        self.assertTrue(next(c for c in payload['credentials']
+                             if c['id'] == first.id)['is_default'])
+
+    def test_a_credential_is_unlocked_with_its_own_password(self):
+        self.login()
+        credential = self.credential_for(self.owner)
+        self.lock_vault(self.owner)
+
+        locked = self.post_json(f'/api/keystore/credentials/{credential.id}/unlock/',
+                                {'vault_password': 'not-the-password'})
+        self.assertEqual(locked.status_code, 403)
+
+        opened = self.post_json(f'/api/keystore/credentials/{credential.id}/unlock/',
+                                {'vault_password': self.VAULT_PASSWORD})
+        self.assertEqual(opened.status_code, 200)
+        self.assertTrue(opened.json()['credential']['unlocked'])
+
+        self.post_json(f'/api/keystore/credentials/{credential.id}/lock/', {})
+        payload = self.client.get('/api/keystore/').json()
+        self.assertFalse(payload['credentials'][0]['unlocked'])
+
+    def test_one_account_cannot_touch_another_accounts_credential(self):
+        self.login()
+        other = self.credential_for(self.other, name='Other account credential')
+        # A credential outside this account is "not found" in the only sense that
+        # matters: it must not be reachable by id.
+        self.assertEqual(
+            self.post_json(f'/api/keystore/credentials/{other.id}/unlock/',
+                           {'vault_password': self.VAULT_PASSWORD}).status_code, 409)
+        self.assertEqual(
+            self.post_json(f'/api/keystore/credentials/{other.id}/delete/', {})
+            .status_code, 409)
+
+    def test_keys_can_be_encrypted_with_a_named_credential(self):
+        self.login()
+        response = self.post_json(
+            '/api/keystore/credentials/',
+            {'name': 'Production', 'vault_password': 'prod-pw-1234',
+             'encrypt_existing': 'true'})
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['encrypted_existing'], 3)
+
+        payload = self.client.get('/api/keystore/').json()
+        self.assertEqual(payload['counts']['plaintext'], 0)
+        self.assertEqual(payload['counts']['unlocked'], 3)
+        self.assertTrue(all(k['credential_name'] == 'Production'
+                            for k in payload['keys']))
+
+    def test_a_locked_credential_names_itself_in_the_refusal(self):
+        credential = self.credential_for(self.owner)
+        from LocalCA.keys import move_to_credential
+        move_to_credential(self.root, 'root', credential)
+        self.lock_vault(self.owner)
+
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        response = self.post_form(
+            f'/api/download/{self.root.serial_number}/key-plain/', {'confirm': 'true'})
+        self.assertEqual(response.status_code, 409)
+        body = response.json()
+        self.assertTrue(body['vault_locked'])
+        self.assertEqual(body['credential_id'], credential.id)
+        self.assertEqual(body['credential_name'], credential.name)
+
+    def test_an_account_without_credentials_is_told_to_make_one(self):
+        User.objects.create_user('keystore-newbie', password='pw-New-123')
+        self.client.login(username='keystore-newbie', password='pw-New-123')
+        self.assertEqual(self.client.get('/api/keystore/').json()['credentials'], [])
+
+        response = self.post_json('/api/keystore/credentials/',
+                                  {'name': 'First', 'vault_password': 'first-pw-123',
+                                   'encrypt_existing': 'true'})
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['encrypted_existing'], 0)  # owns nothing
+
+        made = self.post_json('/api/certificates/create/root/',
+                              {'common_name': 'Newbie Root', 'validity_days': 30})
+        self.assertEqual(made.status_code, 201)
+
+    def test_deleting_a_credential_in_use_is_refused(self):
+        self.login()
+        credential = self.credential_for(self.owner)
+        from LocalCA.keys import move_to_credential
+        move_to_credential(self.root, 'root', credential)
+
+        response = self.post_json(
+            f'/api/keystore/credentials/{credential.id}/delete/', {})
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('still encrypted', response.json()['errors'][0])
+
+    def test_an_empty_credential_can_be_renamed_and_deleted(self):
+        self.login()
+        created = self.post_json('/api/keystore/credentials/',
+                                 {'name': 'Temporary', 'vault_password': 'temp-pw-123'})
+        credential_id = created.json()['credential']['id']
+
+        renamed = self.post_json(
+            f'/api/keystore/credentials/{credential_id}/rename/', {'name': 'Renamed'})
+        self.assertEqual(renamed.status_code, 200)
+        self.assertEqual(renamed.json()['credential']['name'], 'Renamed')
+
+        deleted = self.post_json(
+            f'/api/keystore/credentials/{credential_id}/delete/', {})
+        self.assertEqual(deleted.status_code, 200)
+        self.assertEqual(len(self.client.get('/api/keystore/').json()['credentials']), 1)
+
+    def test_the_password_can_be_changed_and_the_old_one_stops_working(self):
+        self.login()
+        credential = self.credential_for(self.owner)
+        wrong = self.post_json(
+            f'/api/keystore/credentials/{credential.id}/password/',
+            {'old_password': 'nope-nope-nope', 'new_password': 'new-password-123'})
+        self.assertEqual(wrong.status_code, 403)
+
+        changed = self.post_json(
+            f'/api/keystore/credentials/{credential.id}/password/',
+            {'old_password': self.VAULT_PASSWORD, 'new_password': 'new-password-123'})
+        self.assertEqual(changed.status_code, 200)
+
+        self.post_json(f'/api/keystore/credentials/{credential.id}/lock/', {})
+        self.assertEqual(
+            self.post_json(f'/api/keystore/credentials/{credential.id}/unlock/',
+                           {'vault_password': self.VAULT_PASSWORD}).status_code, 403)
+        self.assertEqual(
+            self.post_json(f'/api/keystore/credentials/{credential.id}/unlock/',
+                           {'vault_password': 'new-password-123'}).status_code, 200)
+
+    def test_a_key_can_be_moved_to_another_credential(self):
+        self.login()
+        first = self.credential_for(self.owner)
+        from LocalCA.keys import private_key_pem, store_wrapped_key
+        store_wrapped_key(self.leaf, 'leaf', self.leaf.private_key_encrypted, first)
+
+        second = self.post_json('/api/keystore/credentials/',
+                                {'name': 'Lab', 'vault_password': 'lab-pw-12345'})
+        second_id = second.json()['credential']['id']
+
+        moved = self.post_json('/api/keystore/assign/',
+                               {'credential_id': second_id, 'kind': 'leaf',
+                                'id': self.leaf.pk})
+        self.assertEqual(moved.status_code, 200)
+        self.assertEqual(moved.json()['key']['credential_name'], 'Lab')
+
+        self.leaf.refresh_from_db()
+        self.assertEqual(self.leaf.key_credential_id, second_id)
+        # And it still decrypts, which is the part that would fail if the move
+        # copied the ciphertext instead of re-encrypting it.
+        self.assertIn('PRIVATE KEY', private_key_pem(self.leaf, 'leaf', self.owner))
+
+    def test_a_wrong_password_is_a_json_403(self):
+        self.login()
+        credential = self.credential_for(self.owner)
+        self.lock_vault(self.owner)
+        response = self.post_json(f'/api/keystore/credentials/{credential.id}/unlock/',
                                   {'vault_password': 'not-the-password'})
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response['Content-Type'], 'application/json')
@@ -625,9 +806,9 @@ class DownloadApiTests(ApiTestBase):
         say that, rather than surface a ciphertext error that reads like
         corruption.
         '''
-        from LocalCA.keys import root_key_for, store_wrapped_key
+        from LocalCA.keys import store_wrapped_key
         store_wrapped_key(self.leaf, 'leaf', self.leaf.private_key_encrypted,
-                          root_key_for(self.owner))
+                          self.credential_for(self.owner))
         self.leaf.refresh_from_db()
 
         self.client.login(username='api-staff', password='pw-Staff-123')
@@ -661,9 +842,9 @@ class DownloadApiTests(ApiTestBase):
         this test wraps the key first: the point is the wrapped case, and it has
         to build that state rather than assume it.
         '''
-        from LocalCA.keys import root_key_for, store_wrapped_key
+        from LocalCA.keys import store_wrapped_key
         store_wrapped_key(self.leaf, 'leaf', self.leaf.private_key_encrypted,
-                          root_key_for(self.owner))
+                          self.credential_for(self.owner))
         self.leaf.refresh_from_db()
         self.assertNotEqual(self.leaf.private_key_wrapped, '')
         self.lock_vault(self.owner)

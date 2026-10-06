@@ -16,9 +16,14 @@ password. It is at-rest confidentiality, not an intrusion defence.
 Key hierarchy
 -------------
     password --scrypt(salt)--> KEK          (never stored)
-    KEK      --AES-GCM-------> root key     (root key wrapped and stored, per user)
+    KEK      --AES-GCM-------> root key     (wrapped and stored, per credential)
     root key --HKDF(info)----> per-cert key (derived on demand, never stored)
     per-cert key --AES-GCM(AAD)--> PEM      (AAD binds kind + id, see below)
+
+A *credential* is a named password plus the root key it wraps (see
+``VaultCredential``). An account may hold several, and every stored private key
+records which one wraps it, so the blast radius of a compromised or forgotten
+password is one credential rather than the whole account.
 
 Why a root key rather than encrypting each key straight from the password:
 changing the password re-wraps one 32-byte value instead of re-encrypting every
@@ -76,7 +81,14 @@ class VaultError(Exception):
 
 
 class VaultLocked(VaultError):
-    '''The root key for this user is not available in memory.'''
+    '''The root key for this credential is not available in memory.'''
+
+    def __init__(self, message, credential=None):
+        super().__init__(message)
+        #: The credential whose root key is missing, when the caller knows it.
+        #: The API turns this into `credential_id` in the 409 body so the
+        #: interface can ask for the password of *that* credential.
+        self.credential = credential
 
 
 class VaultPasswordError(VaultError):
@@ -275,16 +287,16 @@ def idle_timeout() -> int:
     return DEFAULT_IDLE_TIMEOUT_SECONDS
 
 
-def _fingerprint(user_id: int, password: str) -> str:
+def _fingerprint(credential_id: int, password: str) -> str:
     '''
-    A value that identifies "this user, with this password" without keeping the
-    password. Used only to decide whether a request may keep an existing unlock
-    alive, so a wrong password cannot extend another session's unlock.
+    A value that identifies "this credential, with this password" without keeping
+    the password. Used only to decide whether a request may keep an existing
+    unlock alive, so a wrong password cannot extend another unlock.
 
     This is not a password hash and is never persisted.
     '''
     digest = hashes.Hash(hashes.SHA256())
-    digest.update(str(user_id).encode('ascii'))
+    digest.update(str(credential_id).encode('ascii'))
     digest.update(b'\x00')
     digest.update(password.encode('utf-8'))
     return digest.finalize().hex()
@@ -292,14 +304,17 @@ def _fingerprint(user_id: int, password: str) -> str:
 
 class UnsealedKeys:
     '''
-    In-memory store of unsealed root keys, one per user.
+    In-memory store of unsealed root keys, one per *credential*.
 
     Deliberately process-local: nothing here is written to the session, a cookie
-    or the disk. A restart re-locks the vault, which is the desired behaviour.
+    or the disk. A restart re-locks everything, which is the desired behaviour.
+
+    Each credential is unlocked on its own, with its own password, and expires on
+    its own idle timer: two credentials are two secrets, and unlocking one must
+    not open the other.
 
     With multiple gunicorn workers each worker has its own store, so a request
-    can land on a worker that has not been unsealed. The management command
-    ``manage.py vault_unseal_file`` exists for that case.
+    can land on a worker that has not unlocked a credential.
     '''
 
     def __init__(self):
@@ -307,58 +322,62 @@ class UnsealedKeys:
         self._fingerprints = {}
         self._last_used = {}
 
-    def _expire(self, user_id: int) -> None:
+    def _expire(self, credential_id: int) -> None:
         timeout = idle_timeout()
-        last = self._last_used.get(user_id)
+        last = self._last_used.get(credential_id)
         if last is not None and timeout >= 0 and (time.time() - last) > timeout:
-            self.lock(user_id)
+            self.lock(credential_id)
 
-    def unseal(self, user_id: int, password: str, root_key: bytes) -> None:
-        self._root_keys[user_id] = root_key
-        self._fingerprints[user_id] = _fingerprint(user_id, password)
-        self._last_used[user_id] = time.time()
+    def unseal(self, credential_id: int, password: str, root_key: bytes) -> None:
+        self._root_keys[credential_id] = root_key
+        self._fingerprints[credential_id] = _fingerprint(credential_id, password)
+        self._last_used[credential_id] = time.time()
 
-    def lock(self, user_id: int) -> None:
-        self._root_keys.pop(user_id, None)
-        self._fingerprints.pop(user_id, None)
-        self._last_used.pop(user_id, None)
+    def lock(self, credential_id: int) -> None:
+        self._root_keys.pop(credential_id, None)
+        self._fingerprints.pop(credential_id, None)
+        self._last_used.pop(credential_id, None)
 
     def lock_all(self) -> None:
         self._root_keys.clear()
         self._fingerprints.clear()
         self._last_used.clear()
 
-    def is_unsealed(self, user_id: int) -> bool:
-        self._expire(user_id)
-        return user_id in self._root_keys
+    def is_unsealed(self, credential_id) -> bool:
+        if credential_id is None:
+            return False
+        self._expire(credential_id)
+        return credential_id in self._root_keys
 
-    def get(self, user_id: int, password: str = None) -> bytes:
+    def get(self, credential_id: int, password: str = None) -> bytes:
         '''
-        The unsealed root key for a user.
+        The unsealed root key for a credential.
 
         When ``password`` is supplied it must match the one that unsealed it;
         this is how a wrong password is rejected instead of silently extending an
         existing unlock.
         '''
-        self._expire(user_id)
-        root_key = self._root_keys.get(user_id)
+        self._expire(credential_id)
+        root_key = self._root_keys.get(credential_id)
         if root_key is None:
-            raise VaultLocked(_('The vault is locked for this account.'))
+            raise VaultLocked(_('This keystore credential is locked.'))
         if password is not None and \
-                self._fingerprints.get(user_id) != _fingerprint(user_id, password):
+                self._fingerprints.get(credential_id) != _fingerprint(credential_id, password):
             raise VaultPasswordError(
                 _('The vault password does not match the unlock.'))
-        self._last_used[user_id] = time.time()
+        self._last_used[credential_id] = time.time()
         return root_key
 
-    def remaining_seconds(self, user_id: int) -> int:
-        self._expire(user_id)
-        if user_id not in self._root_keys:
+    def remaining_seconds(self, credential_id) -> int:
+        if credential_id is None:
+            return 0
+        self._expire(credential_id)
+        if credential_id not in self._root_keys:
             return 0
         timeout = idle_timeout()
         if timeout < 0:
             return -1
-        return max(0, int(timeout - (time.time() - self._last_used[user_id])))
+        return max(0, int(timeout - (time.time() - self._last_used[credential_id])))
 
 
 #: The process-wide store. Import this rather than constructing your own.

@@ -18,11 +18,26 @@ urlpatterns = [
     path('password/', api.api_change_password, name='change_password'),
     path('meta/', api.api_meta, name='meta'),
 
-    # vault: private key encryption
-    path('vault/status/', api.api_vault_status, name='vault_status'),
-    path('vault/unseal/', api.api_vault_unseal, name='vault_unseal'),
-    path('vault/lock/', api.api_vault_lock, name='vault_lock'),
-    path('vault/password/', api.api_vault_rotate, name='vault_rotate'),
+    # keystore: named credentials, and the private keys they wrap. Credential
+    # actions are POST verbs under the credential rather than a REST-ish PATCH,
+    # matching the rest of this API (revoke/delete) and keeping the CSRF story
+    # uniform.
+    path('keystore/', api.api_keystore, name='keystore'),
+    path('keystore/assign/', api.api_keystore_assign, name='keystore_assign'),
+    path('keystore/credentials/', api.api_keystore_create, name='keystore_create'),
+    path('keystore/credentials/<int:credential_id>/unlock/',
+         api.api_keystore_unlock, name='keystore_unlock'),
+    path('keystore/credentials/<int:credential_id>/lock/',
+         api.api_keystore_lock, name='keystore_lock'),
+    path('keystore/credentials/<int:credential_id>/password/',
+         api.api_keystore_password, name='keystore_password'),
+    path('keystore/credentials/<int:credential_id>/rename/',
+         api.api_keystore_rename, name='keystore_rename'),
+    path('keystore/credentials/<int:credential_id>/default/',
+         api.api_keystore_default, name='keystore_default'),
+    path('keystore/credentials/<int:credential_id>/delete/',
+         api.api_keystore_delete, name='keystore_delete'),
+    path('keystore/lock/', api.api_keystore_lock, name='keystore_lock_all'),
 
     # certificate tree and creation options
     path('certificates/', api.api_certificates, name='certificates'),

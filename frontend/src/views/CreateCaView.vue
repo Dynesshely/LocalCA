@@ -18,14 +18,14 @@ import ExportDialog from '@/components/ExportDialog.vue'
 import { useCertificateDownload } from '@/composables/useCertificateDownload'
 import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
-import { useVaultStore } from '@/stores/vault'
+import { useKeystoreStore } from '@/stores/keystore'
 import { useToastStore } from '@/stores/toasts'
 import { ApiError } from '@/api/client'
 
 const { t, d } = useI18n()
 const auth = useAuthStore()
 const certificates = useCertificatesStore()
-const vault = useVaultStore()
+const keystore = useKeystoreStore()
 const toasts = useToastStore()
 
 const busy = ref(false)
@@ -64,7 +64,8 @@ async function submitRoot() {
   } catch (err) {
     if (err instanceof ApiError && err.vaultLocked) {
       // The shell owns the dialog; it retries this exact call once unlocked.
-      vault.requestUnlock(t('ca.createRoot.unlockReason'), submitRoot)
+      keystore.requestUnlock({ reason: t('ca.createRoot.unlockReason'),
+        credentialId: err.credentialId, retry: submitRoot })
       return
     }
     errors.value = err instanceof ApiError ? err.errors : [String(err)]
@@ -87,7 +88,8 @@ async function submitIntermediate() {
   } catch (err) {
     if (err instanceof ApiError && err.vaultLocked) {
       // The shell owns the dialog; it retries this exact call once unlocked.
-      vault.requestUnlock(t('ca.createIntermediate.unlockReason'), submitIntermediate)
+      keystore.requestUnlock({ reason: t('ca.createIntermediate.unlockReason'),
+        credentialId: err.credentialId, retry: submitIntermediate })
       return
     }
     errors.value = err instanceof ApiError ? err.errors : [String(err)]

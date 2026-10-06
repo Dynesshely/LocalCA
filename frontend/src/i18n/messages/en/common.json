@@ -18,7 +18,8 @@
       "openMenu": "Open navigation",
       "closeMenu": "Close navigation",
       "signedInAs": "Signed in as {username}",
-      "signedOut": "You have been logged out."
+      "signedOut": "You have been logged out.",
+      "keystore": "Keystore"
     },
     "action": {
       "create": "Create",

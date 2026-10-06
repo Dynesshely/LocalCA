@@ -14,16 +14,15 @@ import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import FormField from '@/components/FormField.vue'
-import VaultUnlockDialog from '@/components/VaultUnlockDialog.vue'
 import { imports as importApi, meta as metaApi } from '@/api'
 import { ApiError } from '@/api/client'
 import { useCertificatesStore } from '@/stores/certificates'
-import { useVaultStore } from '@/stores/vault'
+import { useKeystoreStore } from '@/stores/keystore'
 import { useToastStore } from '@/stores/toasts'
 
 const { t } = useI18n()
 const certificates = useCertificatesStore()
-const vault = useVaultStore()
+const keystore = useKeystoreStore()
 const toasts = useToastStore()
 
 const files = ref([])
@@ -32,10 +31,6 @@ const busy = ref(false)
 const plan = ref(null)
 const result = ref(null)
 const formats = ref({ supported: [], unsupported: [], limits: {} })
-
-const unlockOpen = ref(false)
-const unlockReason = ref('')
-let retryAfterUnlock = null
 
 /**
  * The server decides how many files a bundle may contain; the drop hint quotes
@@ -140,7 +135,7 @@ async function commit() {
     result.value = payload.result
     plan.value = payload.plan
     await certificates.load()
-    await vault.load()
+    await keystore.load()
     const created = payload.result.created
     toasts.success(t('import.toast.imported', {
       root: created.root,
@@ -154,23 +149,19 @@ async function commit() {
     }
   } catch (err) {
     if (isVaultLocked(err)) {
-      unlockReason.value = err.message
-      retryAfterUnlock = commit
-      unlockOpen.value = true
+      // The shell owns the only credential dialog; it retries this exact call
+      // once the credential the server named is open.
+      keystore.requestUnlock({
+        reason: err.message,
+        credentialId: err.credentialId,
+        retry: commit,
+      })
     } else {
       reportError(err)
     }
   } finally {
     busy.value = false
   }
-}
-
-async function onUnlocked() {
-  unlockOpen.value = false
-  await vault.load()
-  const retry = retryAfterUnlock
-  retryAfterUnlock = null
-  if (retry) await retry()
 }
 
 metaApi.get().then((payload) => {
@@ -469,12 +460,4 @@ metaApi.get().then((payload) => {
       </div>
     </section>
   </div>
-
-  <VaultUnlockDialog
-    :open="unlockOpen"
-    :busy="busy"
-    :reason="unlockReason"
-    @close="unlockOpen = false"
-    @unlocked="onUnlocked"
-  />
 </template>

@@ -13,15 +13,16 @@ from django.urls import reverse
 
 from .ca import CertificateAuthority
 from .keys import (
-    ensure_root_key,
+    change_credential_password,
+    create_credential,
     is_legacy_plaintext,
     is_wrapped,
     private_key_pem,
-    rewrap_root_key,
     store_wrapped_key,
+    unlock_credential,
     vault_status,
 )
-from .models import RootCertificate, VaultRootKey
+from .models import RootCertificate, VaultCredential
 from .vault import (
     PLAINTEXT_MAGIC,
     VaultFormatError,
@@ -134,29 +135,40 @@ class UnsealedStoreTests(TestCase):
     def tearDown(self):
         unsealed.lock_all()
 
+    #: Credentials are the unit of unlocking; the store only needs their id, so
+    #: these tests use bare integers rather than building rows.
+    CREDENTIAL = 42
+
     def test_unseal_and_lock(self):
         key = new_root_key()
-        unsealed.unseal(self.user.id, 'pw-one', key)
-        self.assertTrue(unsealed.is_unsealed(self.user.id))
-        self.assertEqual(unsealed.get(self.user.id), key)
-        unsealed.lock(self.user.id)
-        self.assertFalse(unsealed.is_unsealed(self.user.id))
+        unsealed.unseal(self.CREDENTIAL, 'pw-one', key)
+        self.assertTrue(unsealed.is_unsealed(self.CREDENTIAL))
+        self.assertEqual(unsealed.get(self.CREDENTIAL), key)
+        unsealed.lock(self.CREDENTIAL)
+        self.assertFalse(unsealed.is_unsealed(self.CREDENTIAL))
         with self.assertRaises(VaultLocked):
-            unsealed.get(self.user.id)
+            unsealed.get(self.CREDENTIAL)
 
     def test_a_wrong_password_does_not_ride_an_existing_unlock(self):
-        unsealed.unseal(self.user.id, 'correct-horse', new_root_key())
+        unsealed.unseal(self.CREDENTIAL, 'correct-horse', new_root_key())
         with self.assertRaises(VaultPasswordError):
-            unsealed.get(self.user.id, 'wrong-horse')
+            unsealed.get(self.CREDENTIAL, 'wrong-horse')
+
+    def test_one_credential_locking_leaves_the_other_open(self):
+        unsealed.unseal(1, 'pw', new_root_key())
+        unsealed.unseal(2, 'pw', new_root_key())
+        unsealed.lock(1)
+        self.assertFalse(unsealed.is_unsealed(1))
+        self.assertTrue(unsealed.is_unsealed(2))
 
     def test_idle_timeout_relocks(self):
         from unittest import mock
-        unsealed.unseal(self.user.id, 'pw', new_root_key())
-        self.assertTrue(unsealed.is_unsealed(self.user.id))
+        unsealed.unseal(self.CREDENTIAL, 'pw', new_root_key())
+        self.assertTrue(unsealed.is_unsealed(self.CREDENTIAL))
         with mock.patch('LocalCA.vault.idle_timeout', return_value=0):
             import time as _time
             _time.sleep(0.01)
-            self.assertFalse(unsealed.is_unsealed(self.user.id))
+            self.assertFalse(unsealed.is_unsealed(self.CREDENTIAL))
 
 
 class VaultModelTests(TestCase):
@@ -176,20 +188,20 @@ class VaultModelTests(TestCase):
 
     def setUp(self):
         unsealed.lock_all()
-        self.root_key = ensure_root_key(self.owner.id, self.password)
+        self.credential = create_credential(self.owner, 'Vault test', self.password)
 
     def tearDown(self):
         unsealed.lock_all()
 
     def test_new_key_is_wrapped_and_plaintext_column_is_cleared(self):
-        store_wrapped_key(self.root, 'root', self.pem, self.root_key)
+        store_wrapped_key(self.root, 'root', self.pem, self.credential)
         self.root.refresh_from_db()
         self.assertFalse(self.root.private_key_encrypted)
         self.assertTrue(is_wrapped(self.root))
         self.assertNotIn('BEGIN RSA PRIVATE KEY', self.root.private_key_wrapped)
 
     def test_round_trip_through_the_model(self):
-        store_wrapped_key(self.root, 'root', self.pem, self.root_key)
+        store_wrapped_key(self.root, 'root', self.pem, self.credential)
         self.root.refresh_from_db()
         self.assertEqual(
             private_key_pem(self.root, 'root', self.owner).strip(), self.pem.strip())
@@ -197,14 +209,14 @@ class VaultModelTests(TestCase):
     def test_signature_of_the_private_key_is_preserved(self):
         '''The decrypted key must be usable for real signing.'''
         from cryptography.hazmat.primitives import serialization
-        store_wrapped_key(self.root, 'root', self.pem, self.root_key)
+        store_wrapped_key(self.root, 'root', self.pem, self.credential)
         self.root.refresh_from_db()
         recovered = private_key_pem(self.root, 'root', self.owner)
         loaded = serialization.load_pem_private_key(recovered.encode(), password=None)
         self.assertEqual(loaded.key_size, 2048)
 
     def test_locked_vault_cannot_produce_a_wrapped_key(self):
-        store_wrapped_key(self.root, 'root', self.pem, self.root_key)
+        store_wrapped_key(self.root, 'root', self.pem, self.credential)
         self.root.refresh_from_db()
         unsealed.lock(self.owner.id)
         with self.assertRaises(VaultLocked):
@@ -222,33 +234,39 @@ class VaultModelTests(TestCase):
             private_key_pem(self.root, 'root', self.owner).strip(), self.pem.strip())
 
     def test_changing_the_vault_password_keeps_keys_readable(self):
-        store_wrapped_key(self.root, 'root', self.pem, self.root_key)
+        store_wrapped_key(self.root, 'root', self.pem, self.credential)
         new_password = 'a-different-vault-password'
-        rewrap_root_key(self.owner.id, self.password, new_password)
+        change_credential_password(self.credential, self.password, new_password)
 
         # The stored key blob is untouched...
         self.root.refresh_from_db()
         blob_before = self.root.private_key_wrapped
         # ...and the new password opens it.
         unsealed.lock_all()
-        ensure_root_key(self.owner.id, new_password)
+        unlock_credential(self.credential, new_password)
         self.assertEqual(
             private_key_pem(self.root, 'root', self.owner).strip(), self.pem.strip())
         self.assertEqual(self.root.private_key_wrapped, blob_before)
 
     def test_old_password_stops_working_after_a_change(self):
-        rewrap_root_key(self.owner.id, self.password, 'brand-new-vault-password')
+        change_credential_password(self.credential, self.password,
+                                   'brand-new-vault-password')
         unsealed.lock_all()
         with self.assertRaises(VaultPasswordError):
-            ensure_root_key(self.owner.id, self.password)
+            unlock_credential(self.credential, self.password)
 
-    def test_first_unseal_creates_exactly_one_root_key_row(self):
-        self.assertTrue(VaultRootKey.objects.filter(user=self.owner).exists())
-        ensure_root_key(self.owner.id, self.password)
-        self.assertEqual(VaultRootKey.objects.filter(user=self.owner).count(), 1)
+    def test_creating_a_credential_without_a_password_is_refused(self):
+        with self.assertRaises(VaultPasswordError):
+            create_credential(self.owner, 'No password', '')
+
+    def test_keys_name_the_credential_that_wraps_them(self):
+        store_wrapped_key(self.root, 'root', self.pem, self.credential)
+        self.root.refresh_from_db()
+        self.assertEqual(self.root.key_credential_id, self.credential.id)
+        self.assertEqual(VaultCredential.objects.filter(user=self.owner).count(), 1)
 
     def test_status_counts_encrypted_plaintext_and_ownerless(self):
-        store_wrapped_key(self.root, 'root', self.pem, self.root_key)
+        store_wrapped_key(self.root, 'root', self.pem, self.credential)
         orphan = RootCertificate.objects.create(
             name='Ownerless Root', serial_number='orphan-1',
             public_key='x', private_key_encrypted=self.pem,
@@ -263,112 +281,22 @@ class VaultModelTests(TestCase):
         self.assertIsNone(orphan.created_by_id)
 
 
-class VaultApiTests(TestCase):
-    '''The vault endpoints and the guarantees they must keep.'''
-
-    @classmethod
-    def setUpTestData(cls):
-        ca = CertificateAuthority()
-        cls.owner = User.objects.create_user('api-vault', password='pw-Owner-123')
-        cls.other = User.objects.create_user('api-other', password='pw-Other-123')
-        data = ca.create_root_certificate('API Vault Root', 3650)
-        cls.root = RootCertificate.objects.create(
-            name='API Vault Root', serial_number=str(data['serial_number']),
-            public_key=data['public_key'],
-            private_key_encrypted=data['private_key'],
-            valid_until=data['valid_until'], created_by=cls.owner)
-
-    def setUp(self):
-        unsealed.lock_all()
-
-    def tearDown(self):
-        unsealed.lock_all()
-
-    def test_status_requires_authentication(self):
-        self.assertEqual(self.client.get('/api/vault/status/').status_code, 401)
-
-    def test_status_reports_plaintext_before_migration(self):
-        self.client.login(username='api-vault', password='pw-Owner-123')
-        payload = self.client.get('/api/vault/status/').json()
-        self.assertFalse(payload['has_root_key'])
-        self.assertFalse(payload['unsealed'])
-        self.assertEqual(payload['plaintext'], 1)
-        self.assertEqual(payload['wrapped'], 0)
-
-    def test_unseal_then_status_is_open(self):
-        self.client.login(username='api-vault', password='pw-Owner-123')
-        response = self.client.post('/api/vault/unseal/',
-                                    {'vault_password': 'vault-secret-123'})
-        self.assertEqual(response.status_code, 200)
-        self.assertTrue(response.json()['unsealed'])
-        self.assertTrue(self.client.get('/api/vault/status/').json()['unsealed'])
-
-    def test_unseal_is_independent_per_account(self):
-        '''One user opening the vault must not open it for another.'''
-        self.client.login(username='api-vault', password='pw-Owner-123')
-        self.client.post('/api/vault/unseal/', {'vault_password': 'vault-secret-123'})
-        self.client.logout()
-
-        self.client.login(username='api-other', password='pw-Other-123')
-        payload = self.client.get('/api/vault/status/').json()
-        self.assertFalse(payload['unsealed'])
-
-    def test_wrong_unseal_password_is_403(self):
-        self.client.login(username='api-vault', password='pw-Owner-123')
-        self.client.post('/api/vault/unseal/', {'vault_password': 'right-one-12345'})
-        self.client.post('/api/vault/lock/')
-        response = self.client.post('/api/vault/unseal/',
-                                    {'vault_password': 'wrong-one-12345'})
-        self.assertEqual(response.status_code, 403)
-        self.assertFalse(self.client.get('/api/vault/status/').json()['unsealed'])
-
-    def test_unseal_requires_a_password(self):
-        self.client.login(username='api-vault', password='pw-Owner-123')
-        self.assertEqual(
-            self.client.post('/api/vault/unseal/', {'vault_password': ''}).status_code,
-            400)
-
-    def test_lock_closes_the_vault(self):
-        self.client.login(username='api-vault', password='pw-Owner-123')
-        self.client.post('/api/vault/unseal/', {'vault_password': 'vault-secret-123'})
-        self.client.post('/api/vault/lock/')
-        self.assertFalse(self.client.get('/api/vault/status/').json()['unsealed'])
-
-    def test_password_rotation_requires_both_passwords(self):
-        self.client.login(username='api-vault', password='pw-Owner-123')
-        self.client.post('/api/vault/unseal/', {'vault_password': 'vault-secret-123'})
-        response = self.client.post('/api/vault/password/',
-                                    {'old_password': 'vault-secret-123'})
-        self.assertEqual(response.status_code, 400)
-
-    def test_password_rotation_rejects_a_short_new_password(self):
-        self.client.login(username='api-vault', password='pw-Owner-123')
-        self.client.post('/api/vault/unseal/', {'vault_password': 'vault-secret-123'})
-        response = self.client.post('/api/vault/password/', {
-            'old_password': 'vault-secret-123', 'new_password': 'short'})
-        self.assertEqual(response.status_code, 400)
-
-    def test_password_rotation_works_and_old_password_stops_working(self):
-        self.client.login(username='api-vault', password='pw-Owner-123')
-        self.client.post('/api/vault/unseal/', {'vault_password': 'vault-secret-123'})
-        response = self.client.post('/api/vault/password/', {
-            'old_password': 'vault-secret-123',
-            'new_password': 'a-much-longer-vault-password'})
-        self.assertEqual(response.status_code, 200)
-
-        self.client.post('/api/vault/lock/')
-        self.assertEqual(
-            self.client.post('/api/vault/unseal/',
-                             {'vault_password': 'vault-secret-123'}).status_code, 403)
-        self.assertEqual(
-            self.client.post('/api/vault/unseal/',
-                             {'vault_password': 'a-much-longer-vault-password'}
-                             ).status_code, 200)
+class KeystoreApiMiscTests(TestCase):
+    """Endpoint behaviour the keystore feature class in tests_api does not cover."""
 
     def test_unmatched_api_path_answers_json_404_not_the_spa(self):
         response = self.client.get('/api/definitely/not/here/')
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response['Content-Type'], 'application/json')
+
+    def test_the_old_vault_endpoints_are_gone(self):
+        """They were replaced by /api/keystore/; the SPA is the only client."""
+        for path in ('/api/vault/status/', '/api/vault/unseal/',
+                     '/api/vault/lock/', '/api/vault/password/'):
+            with self.subTest(path=path):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 404)
+                self.assertEqual(response['Content-Type'], 'application/json')
 
 
 class RewrapCommandTests(TestCase):

@@ -25,6 +25,15 @@ class RootCertificate(models.Model):
     # key has not been migrated yet and is still stored in the legacy
     # column above; readers must check this field first.
     private_key_wrapped = models.TextField(null=True, blank=True)
+    # Which keystore credential (name + password) wraps that ciphertext. Null
+    # alongside a wrapped key means the owner is gone and nothing can unwrap it.
+    # PROTECT: a credential in use cannot be deleted out from under its keys.
+    key_credential = models.ForeignKey(
+        'VaultCredential',
+        on_delete=models.PROTECT,
+        related_name='+',
+        null=True,
+        blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     valid_until = models.DateTimeField()
 
@@ -50,6 +59,15 @@ class IntermediateCertificate(models.Model):
     # key has not been migrated yet and is still stored in the legacy
     # column above; readers must check this field first.
     private_key_wrapped = models.TextField(null=True, blank=True)
+    # Which keystore credential (name + password) wraps that ciphertext. Null
+    # alongside a wrapped key means the owner is gone and nothing can unwrap it.
+    # PROTECT: a credential in use cannot be deleted out from under its keys.
+    key_credential = models.ForeignKey(
+        'VaultCredential',
+        on_delete=models.PROTECT,
+        related_name='+',
+        null=True,
+        blank=True)
     signed_by_root = models.ForeignKey(
         RootCertificate, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -79,6 +97,15 @@ class LeafCertificate(models.Model):
     # key has not been migrated yet and is still stored in the legacy
     # column above; readers must check this field first.
     private_key_wrapped = models.TextField(null=True, blank=True)
+    # Which keystore credential (name + password) wraps that ciphertext. Null
+    # alongside a wrapped key means the owner is gone and nothing can unwrap it.
+    # PROTECT: a credential in use cannot be deleted out from under its keys.
+    key_credential = models.ForeignKey(
+        'VaultCredential',
+        on_delete=models.PROTECT,
+        related_name='+',
+        null=True,
+        blank=True)
     signed_by_intermediate = models.ForeignKey(
         IntermediateCertificate, on_delete=models.CASCADE)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -200,23 +227,39 @@ class AuditLog(models.Model):
         return f"{self.action} by {self.performed_by} at {self.timestamp}"
 
 
-class VaultRootKey(models.Model):
+class VaultCredential(models.Model):
     """
-    A user's vault root key, wrapped with their vault password.
+    A named password that wraps one root key.
+
+    Credentials are the unit an operator actually thinks in: "the CA key is under
+    *Production*, the lab keys are under *Lab*". Each one holds its own password,
+    and every stored private key names the credential that wraps it, so a
+    compromise (or a forgotten password) is scoped to one credential instead of
+    to the whole account.
 
     The password itself is never stored: the root key is wrapped with a
     scrypt-derived key-encryption key at wrap time and can only be unwrapped by
-    supplying that password again. Losing the password therefore makes every
-    private key under this account unrecoverable; there is deliberately no
-    recovery path.
+    supplying that password again. Losing it therefore makes every private key
+    under that credential unrecoverable; there is deliberately no recovery path.
     """
-    user = models.OneToOneField(
+    user = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
-        related_name='vault_root_key')
+        related_name='vault_credentials')
+    name = models.CharField(max_length=100)
     wrapped_root_key = models.TextField()
+    #: The credential new keys are stored under unless a request names another.
+    is_default = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ['name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'name'], name='unique_credential_name_per_user'),
+        ]
+
     def __str__(self):
-        return f"VaultRootKey(user={self.user_id})"
+        return f"VaultCredential(user={self.user_id}, name={self.name!r})"
+

@@ -48,16 +48,25 @@ from .forms import (
 from .keys import (
     KIND_LABELS,
     KeyUnavailable,
-    ensure_root_key,
+    change_credential_password,
+    create_credential,
+    credential_key_count,
+    credential_root_key,
+    credentials_for,
+    default_credential,
+    get_credential,
     is_legacy_plaintext,
     is_wrapped,
     issuers_with_key,
+    key_status,
+    keystore_report,
+    lock_credential,
+    move_to_credential,
     private_key_pem,
-    rewrap_root_key,
-    root_key_for,
-    wrap_legacy_keys,
+    set_default_credential,
     store_wrapped_key,
-    vault_status,
+    unlock_credential,
+    wrap_legacy_keys,
 )
 from .models import (
     AuditLog,
@@ -65,7 +74,7 @@ from .models import (
     LeafCertificate,
     RevokedCertificate,
     RootCertificate,
-    VaultRootKey,
+    VaultCredential,
 )
 from . import import_service, importers, throttle
 from .serializers import (
@@ -335,8 +344,67 @@ def api_change_password(request):
 
 
 # --------------------------------------------------------------------------
-# vault (private key encryption)
+# keystore (private key encryption)
 # --------------------------------------------------------------------------
+
+def _vault_locked(message, credential=None, **extra):
+    '''
+    The one shape a locked credential is reported in.
+
+    ``credential_id``/``credential_name`` are what the interface needs in order to
+    ask for the right password instead of guessing which credential to open. When
+    the account has no credential at all, both are null and the caller is expected
+    to offer to create one.
+    '''
+    return _error(message, status=409, vault_locked=True,
+                  credential_id=credential.id if credential else None,
+                  credential_name=credential.name if credential else None,
+                  **extra)
+
+
+def _credential_or_error(request, credential_id, *, required=True):
+    '''This account's credential, or a response explaining why not.'''
+    credential = get_credential(request.user, credential_id)
+    if credential is None and not credential_id:
+        credential = default_credential(request.user)
+    if credential is None:
+        if not required:
+            return None, None
+        return None, _vault_locked(_(
+            'No keystore credential exists yet, so private keys cannot be '
+            'stored. Create one (a name and a password) first.'))
+    return credential, None
+
+
+def _credential_to_dict(credential):
+    return {
+        'id': credential.id,
+        'name': credential.name,
+        'is_default': credential.is_default,
+        'unlocked': unsealed.is_unsealed(credential.id),
+        'unseal_remaining_seconds': unsealed.remaining_seconds(credential.id),
+        'key_count': credential_key_count(credential),
+    }
+
+
+def _key_to_dict(cert, kind, credential=None):
+    '''One row of the keystore's key inventory. Never key material.'''
+    return {
+        'kind': kind,
+        'id': cert.pk,
+        'name': cert.common_name if kind == 'leaf' else cert.name,
+        'serial_number': str(cert.serial_number),
+        'status': key_status(cert),
+        'credential_id': credential.id if credential else None,
+        'credential_name': credential.name if credential else None,
+    }
+
+
+def _cert_kinds():
+    return (('root', RootCertificate),
+            ('intermediate', IntermediateCertificate),
+            ('leaf', LeafCertificate))
+
 
 def _vault_payload(request):
     '''Read a vault password from either JSON or form encoding.'''
@@ -345,130 +413,254 @@ def _vault_payload(request):
 
 
 @require_GET
-def api_vault_status(request):
+def api_keystore(request):
     '''
-    Whether this account's private keys are encrypted, and whether the vault is
-    currently open.
+    The keystore page: this account's credentials, and every key it owns with the
+    state that key is in.
 
-    Reports plaintext and ownerless keys honestly: an operator should be able to
-    see exactly which keys the encryption does not cover.
+    Read-only, and it never returns key material -- only which credential wraps
+    which certificate, and whether that credential is currently open.
     '''
     if not request.user.is_authenticated:
         return _error(_('Authentication required.'), status=401)
-
-    status = vault_status(request.user.id)
-    return _ok({
-        'has_root_key': status['has_root_key'],
-        'unsealed': status['unsealed'],
-        'unseal_remaining_seconds': status['unseal_remaining_seconds'],
-        'wrapped': status['wrapped'],
-        'plaintext': status['plaintext'],
-        'orphaned': status['orphaned'],
-        'by_kind': status['by_kind'],
-    })
+    return _ok(keystore_report(request.user))
 
 
 @require_POST
-def api_vault_unseal(request):
-    '''
-    Open the vault with the account's vault password.
-
-    The password is only used to unwrap the stored root key; neither it nor the
-    root key is written to the session, a cookie or the database.
-    '''
+def api_keystore_create(request):
+    '''Add a credential: a name, a password, and a fresh root key behind them.'''
     if not request.user.is_authenticated:
         return _error(_('Authentication required.'), status=401)
 
-    # `_` is gettext in this module, so the discarded half of the pair must not
-    # be named `_`: that rebinds it to a QueryDict for the rest of the view and
-    # every later `_('...')` raises TypeError.
+    data = _payload(request)
+    name = str(data.get('name') or '').strip()
+    password = str(data.get('vault_password') or '')
+    if not name:
+        return _error(_('A credential name is required.'))
+    if len(password) < 8:
+        return _error(_('A vault password of at least 8 characters is required.'))
+    if VaultCredential.objects.filter(user=request.user, name=name).exists():
+        return _error(_('A credential with that name already exists.'))
+
+    credential = create_credential(request.user, name, password)
+
+    # An account that already had cleartext keys should not keep them just because
+    # the operator picked a name and a password: this is the moment they can be
+    # encrypted, and `manage.py rewrap_keys` remains for whatever fails here.
+    encrypted = 0
+    if str(data.get('encrypt_existing') or '').lower() in ('1', 'true', 'yes', 'on'):
+        wrapped, _failures = wrap_legacy_keys(request.user.id, credential)
+        encrypted = wrapped
+
+    AuditLog.objects.create(
+        action='ACCESS', performed_by=request.user,
+        details=(f'Created keystore credential "{name}"'
+                 + (f'; encrypted {encrypted} existing private key(s)'
+                    if encrypted else '')))
+    return _ok({'credential': _credential_to_dict(credential),
+                'encrypted_existing': encrypted}, status=201)
+
+
+@require_POST
+def api_keystore_unlock(request, credential_id):
+    '''Open one credential with its own password.'''
+    if not request.user.is_authenticated:
+        return _error(_('Authentication required.'), status=401)
+    credential, error = _credential_or_error(request, credential_id)
+    if error:
+        return error
+
     password, _ignored = _vault_payload(request)
     if not password:
         return _error(_('A vault password is required.'))
-
-    # Nothing has been chosen for this account yet: this unlock *is* the setup.
-    first_time = not VaultRootKey.objects.filter(user_id=request.user.id).exists()
-
     try:
-        ensure_root_key(request.user.id, password)
+        unlock_credential(credential, password)
     except VaultPasswordError:
         AuditLog.objects.create(
             action='ACCESS', performed_by=request.user,
-            details='Failed vault unseal attempt')
+            details=f'Failed unlock of keystore credential "{credential.name}"')
         return _error(_('The vault password is incorrect.'), status=403)
     except VaultError as exc:
-        return _error(_('Could not open the vault: %(error)s') % {'error': exc})
+        return _error(_('Could not open the credential: %(error)s') % {'error': exc})
 
-    # Setting a password is the moment the account stops having cleartext keys.
-    # Leaving them that way until somebody remembers `manage.py rewrap_keys` is
-    # the surprising outcome, so they are wrapped now.
-    encrypted_now = 0
-    if first_time:
-        encrypted_now, failures = wrap_legacy_keys(
-            request.user.id, root_key_for(request.user))
-        details = 'Vault unsealed (first time'
-        details += f'; encrypted {encrypted_now} existing private key(s)'
-        details += f', {len(failures)} failed)' if failures else ')'
-        AuditLog.objects.create(
-            action='ACCESS', performed_by=request.user, details=details)
-    else:
-        AuditLog.objects.create(
-            action='ACCESS', performed_by=request.user, details='Vault unsealed')
-
-    status = vault_status(request.user.id)
-    return _ok({
-        'unsealed': True,
-        'unseal_remaining_seconds': status['unseal_remaining_seconds'],
-        'wrapped': status['wrapped'],
-        'plaintext': status['plaintext'],
-        'orphaned': status['orphaned'],
-        'encrypted_existing': encrypted_now,
-    })
+    AuditLog.objects.create(
+        action='ACCESS', performed_by=request.user,
+        details=f'Opened keystore credential "{credential.name}"')
+    return _ok({'credential': _credential_to_dict(credential)})
 
 
 @require_POST
-def api_vault_lock(request):
-    '''Forget the unsealed root key immediately.'''
+def api_keystore_lock(request, credential_id=None):
+    '''Forget one credential's root key immediately, or all of them.'''
     if not request.user.is_authenticated:
         return _error(_('Authentication required.'), status=401)
+    if credential_id is None:
+        for credential in credentials_for(request.user):
+            lock_credential(credential)
+        AuditLog.objects.create(
+            action='ACCESS', performed_by=request.user,
+            details='Locked every keystore credential')
+        return _ok({'credentials': [_credential_to_dict(c)
+                                    for c in credentials_for(request.user)]})
 
-    unsealed.lock(request.user.id)
+    credential, error = _credential_or_error(request, credential_id)
+    if error:
+        return error
+    lock_credential(credential)
     AuditLog.objects.create(
-        action='ACCESS', performed_by=request.user, details='Vault locked')
-    return _ok({'unsealed': False})
+        action='ACCESS', performed_by=request.user,
+        details=f'Locked keystore credential "{credential.name}"')
+    return _ok({'credential': _credential_to_dict(credential)})
 
 
 @require_POST
-def api_vault_rotate(request):
+def api_keystore_password(request, credential_id):
     '''
-    Change the vault password.
+    Change a credential's password.
 
     Only the wrapping changes; the stored private keys are untouched, which is
     why the envelope design exists.
     '''
     if not request.user.is_authenticated:
         return _error(_('Authentication required.'), status=401)
+    credential, error = _credential_or_error(request, credential_id)
+    if error:
+        return error
 
     data = _payload(request)
     old_password = str(data.get('old_password') or '')
     new_password = str(data.get('new_password') or '')
     if not old_password or not new_password:
         return _error(_('Both the current and the new vault password are required.'))
-    if len(new_password) < 12:
-        return _error(_('The new vault password must be at least 12 characters.'))
+    if len(new_password) < 8:
+        return _error(_('The new vault password must be at least 8 characters.'))
 
     try:
-        rewrap_root_key(request.user.id, old_password, new_password)
+        change_credential_password(credential, old_password, new_password)
     except VaultPasswordError:
         return _error(_('The current vault password is incorrect.'), status=403)
     except VaultError as exc:
         return _error(_('Could not change the vault password: %(error)s')
-                           % {'error': exc})
+                      % {'error': exc})
 
     AuditLog.objects.create(
         action='ACCESS', performed_by=request.user,
-        details='Vault password changed')
-    return _ok({'unsealed': True})
+        details=f'Changed the password of keystore credential "{credential.name}"')
+    return _ok({'credential': _credential_to_dict(credential)})
+
+
+@require_POST
+def api_keystore_rename(request, credential_id):
+    '''Rename a credential. Purely cosmetic: the wrapping does not change.'''
+    if not request.user.is_authenticated:
+        return _error(_('Authentication required.'), status=401)
+    credential, error = _credential_or_error(request, credential_id)
+    if error:
+        return error
+
+    name = str(_payload(request).get('name') or '').strip()
+    if not name:
+        return _error(_('A credential name is required.'))
+    if VaultCredential.objects.filter(
+            user=request.user, name=name).exclude(pk=credential.pk).exists():
+        return _error(_('A credential with that name already exists.'))
+
+    old_name = credential.name
+    credential.name = name
+    credential.save(update_fields=['name', 'updated_at'])
+    AuditLog.objects.create(
+        action='ACCESS', performed_by=request.user,
+        details=f'Renamed keystore credential "{old_name}" to "{name}"')
+    return _ok({'credential': _credential_to_dict(credential)})
+
+
+@require_POST
+def api_keystore_default(request, credential_id):
+    '''Choose which credential new private keys are wrapped with.'''
+    if not request.user.is_authenticated:
+        return _error(_('Authentication required.'), status=401)
+    credential, error = _credential_or_error(request, credential_id)
+    if error:
+        return error
+    set_default_credential(credential)
+    return _ok({'credential': _credential_to_dict(credential)})
+
+
+@require_POST
+def api_keystore_delete(request, credential_id):
+    '''
+    Delete a credential.
+
+    Refused while keys still point at it: they would become undecryptable, and
+    deleting the wrapping key is not something a button should be able to do by
+    accident. Move the keys, or delete them, first.
+    '''
+    if not request.user.is_authenticated:
+        return _error(_('Authentication required.'), status=401)
+    credential, error = _credential_or_error(request, credential_id)
+    if error:
+        return error
+
+    in_use = credential_key_count(credential)
+    if in_use:
+        return _error(
+            _('%(count)s private key(s) are still encrypted with "%(name)s". '
+              'Move them to another credential first.')
+            % {'count': in_use, 'name': credential.name}, status=409)
+
+    name = credential.name
+    was_default = credential.is_default
+    with transaction.atomic():
+        credential.delete()
+        if was_default:
+            replacement = credentials_for(request.user).first()
+            if replacement is not None:
+                set_default_credential(replacement)
+
+    AuditLog.objects.create(
+        action='ACCESS', performed_by=request.user,
+        details=f'Deleted keystore credential "{name}"')
+    return _ok({'deleted': True})
+
+
+@require_POST
+def api_keystore_assign(request):
+    '''
+    Encrypt one certificate's key with a credential.
+
+    The keystore page's per-key action, and it covers both directions: a cleartext
+    key is encrypted for the first time, and a wrapped key is moved between
+    credentials. Either way the key is decrypted with whatever holds it now and
+    re-encrypted with the target, so nothing is copied.
+    '''
+    if not request.user.is_authenticated:
+        return _error(_('Authentication required.'), status=401)
+
+    data = _payload(request)
+    credential, error = _credential_or_error(request, data.get('credential_id'))
+    if error:
+        return error
+
+    kind = str(data.get('kind') or '')
+    model = dict(_cert_kinds()).get(kind)
+    if model is None:
+        return _error(_('Unknown certificate kind.'), status=404)
+    cert = model.objects.filter(pk=data.get('id'), created_by=request.user).first()
+    if cert is None:
+        return _error(_('Certificate not found.'), status=404)
+
+    try:
+        move_to_credential(cert, kind, credential)
+    except VaultLocked as exc:
+        return _vault_locked(str(exc), exc.credential)
+    except KeyUnavailable as exc:
+        return _error(str(exc), status=409)
+
+    AuditLog.objects.create(
+        action='ACCESS', performed_by=request.user,
+        details=(f'Encrypted the private key of {kind} "{_download_name(cert)}" '
+                 f'with keystore credential "{credential.name}"'))
+    return _ok({'key': _key_to_dict(cert, kind, credential)})
 
 
 @require_GET
@@ -599,27 +791,42 @@ def api_create_certificate(request, cert_type):
 
     ca = CertificateAuthority()
 
-    # A root is self-signed, so creating one needs no stored key and no open
-    # vault. Signing an intermediate or a leaf consumes the issuer's private
-    # key, which requires the vault to be open for this account.
+    def target_credential():
+        '''
+        Which credential the *new* key is wrapped with.
+
+        Resolved after the form, so a request naming somebody else's issuing CA is
+        still refused as a bad request rather than as a keystore problem. A
+        request may name a credential; without one it is the account's default, and
+        an account with none is asked to create one rather than silently writing a
+        plaintext key.
+        '''
+        credential, error = _credential_or_error(
+            request, _payload(request).get('credential_id'))
+        if error:
+            return None, error
+        try:
+            credential_root_key(credential)
+        except VaultLocked as exc:
+            return None, _vault_locked(
+                _('The keystore credential "%(name)s" is locked. Open it to store '
+                  'the private key that is about to be created.')
+                % {'name': credential.name}, exc.credential)
+        return credential, None
+
+    # A root is self-signed, so creating one needs no stored key. Signing an
+    # intermediate or a leaf consumes the issuer's private key, which requires
+    # that key's own credential to be open.
     try:
         if cert_type == 'root':
             form = RootCertificateForm(_payload(request))
             if not form.is_valid():
                 return _form_error_response(form)
+            credential, error = target_credential()
+            if error:
+                return error
             name = form.cleaned_data['common_name']
             data = ca.create_root_certificate(name, form.cleaned_data['validity_days'])
-            # Root keys are stored wrapped. Opening the vault here rather than
-            # lazily means a brand-new deployment never writes a plaintext CA key,
-            # not even for a moment.
-            try:
-                root_key = root_key_for(request.user)
-            except VaultLocked:
-                return _error(
-                    _('Create a vault password before generating CA keys: '
-                      'certificate private keys are stored encrypted and the vault '
-                      'is locked.'),
-                    status=409, vault_locked=True)
             certificate = RootCertificate.objects.create(
                 name=name,
                 serial_number=str(data['serial_number']),
@@ -628,7 +835,7 @@ def api_create_certificate(request, cert_type):
                 valid_until=data['valid_until'],
                 created_by=request.user,
             )
-            store_wrapped_key(certificate, 'root', data['private_key'], root_key)
+            store_wrapped_key(certificate, 'root', data['private_key'], credential)
 
         elif cert_type == 'intermediate':
             form = IntermediateCertificateForm(_payload(request), user=request.user)
@@ -637,15 +844,14 @@ def api_create_certificate(request, cert_type):
             name = form.cleaned_data['common_name']
             root = form.cleaned_data['root_id']
             try:
-                root_key = root_key_for(request.user)
-            except VaultLocked:
-                return _error(
-                    _('The vault is locked. Unlock it to sign with this root CA.'),
-                    status=409, vault_locked=True)
-            try:
                 issuer_key = private_key_pem(root, 'root', request.user)
             except KeyUnavailable as exc:
                 return _error(str(exc), status=409)
+            except VaultLocked as exc:
+                return _vault_locked(str(exc), exc.credential)
+            credential, error = target_credential()
+            if error:
+                return error
             data = ca.create_intermediate_certificate(
                 name, form.cleaned_data['validity_days'],
                 root.public_key, issuer_key)
@@ -658,7 +864,8 @@ def api_create_certificate(request, cert_type):
                 valid_until=data['valid_until'],
                 created_by=request.user,
             )
-            store_wrapped_key(certificate, 'intermediate', data['private_key'], root_key)
+            store_wrapped_key(certificate, 'intermediate', data['private_key'],
+                              credential)
 
         elif cert_type == 'leaf':
             form = LeafCertificateForm(_payload(request), user=request.user)
@@ -668,16 +875,14 @@ def api_create_certificate(request, cert_type):
             intermediate = form.cleaned_data['intermediate_id']
             sans = form.san_list()
             try:
-                root_key = root_key_for(request.user)
-            except VaultLocked:
-                return _error(
-                    _('The vault is locked. Unlock it to sign with this '
-                      'intermediate CA.'),
-                    status=409, vault_locked=True)
-            try:
                 issuer_key = private_key_pem(intermediate, 'intermediate', request.user)
             except KeyUnavailable as exc:
                 return _error(str(exc), status=409)
+            except VaultLocked as exc:
+                return _vault_locked(str(exc), exc.credential)
+            credential, error = target_credential()
+            if error:
+                return error
             data = ca.create_leaf_certificate(
                 common_name=name,
                 san_list=sans,
@@ -695,7 +900,7 @@ def api_create_certificate(request, cert_type):
                 signed_by_intermediate=intermediate,
                 created_by=request.user,
             )
-            store_wrapped_key(certificate, 'leaf', data['private_key'], root_key)
+            store_wrapped_key(certificate, 'leaf', data['private_key'], credential)
         else:
             raise Http404('Unknown certificate kind')
 
@@ -1044,10 +1249,12 @@ def _download_private(request, cert, spec):
 
     try:
         key_pem = private_key_pem(cert, kind, request.user)
-    except VaultLocked:
-        return _error(
-            _('The vault is locked. Unlock it to export this private key.'),
-            status=409, vault_locked=True)
+    except VaultLocked as exc:
+        return _vault_locked(
+            _('The keystore credential "%(name)s" is locked. Open it to export '
+              'this private key.')
+            % {'name': exc.credential.name if exc.credential else '?'},
+            exc.credential)
     except KeyUnavailable as exc:
         return _error(str(exc), status=409)
 
@@ -1205,16 +1412,22 @@ def api_import_certificates(request):
     if dry_run:
         return _ok({'dry_run': True, **payload})
 
-    root_key = None
+    credential = None
     if plan.requires_vault_unlock:
-        try:
-            root_key = root_key_for(request.user)
-        except VaultLocked:
-            return _error(
-                _('The vault is locked. Unlock it to store the private keys '
-                  'carried by this import.'), status=409, vault_locked=True)
+        # The same rule as creating a certificate: an import that carries keys has
+        # to say which credential wraps them, and an account with none is asked to
+        # create one rather than dropping the keys on the floor.
+        credential, error = _credential_or_error(request, overrides.get('credential_id')
+                                                or _payload(request).get('credential_id'))
+        if error:
+            return error
+        if not unsealed.is_unsealed(credential.id):
+            return _vault_locked(
+                _('The keystore credential "%(name)s" is locked. Open it to store '
+                  'the private keys carried by this import.')
+                % {'name': credential.name}, credential)
 
-    result = import_service.apply_plan(plan, request.user, root_key)
+    result = import_service.apply_plan(plan, request.user, credential)
     AuditLog.objects.create(
         action='IMPORT',
         performed_by=request.user,

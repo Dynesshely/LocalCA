@@ -18,15 +18,15 @@ import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import BrandMark from '@/components/BrandMark.vue'
 import AppIcon from '@/components/AppIcon.vue'
 import FeedbackMessages from '@/components/FeedbackMessages.vue'
-import VaultUnlockDialog from '@/components/VaultUnlockDialog.vue'
+import KeystoreDialog from '@/components/KeystoreDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useToastStore } from '@/stores/toasts'
-import { useVaultStore } from '@/stores/vault'
+import { useKeystoreStore } from '@/stores/keystore'
 
 const { t, locale } = useI18n()
 const auth = useAuthStore()
 const toasts = useToastStore()
-const vault = useVaultStore()
+const keystore = useKeystoreStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -40,6 +40,10 @@ const navGroups = computed(() => {
       { name: 'create-ca', labelKey: 'common.nav.createCa', icon: 'certificate' },
       { name: 'create-leaf', labelKey: 'common.nav.createLeaf', icon: 'key' },
       { name: 'import', labelKey: 'common.nav.import', icon: 'upload' },
+      // Its own page rather than a settings drawer: the state it reports (which
+      // key is encrypted with which credential) is something an operator needs to
+      // be able to *look at*, not just a dialog that appears when something fails.
+      { name: 'keystore', labelKey: 'common.nav.keystore', icon: 'shield' },
     )
   }
   const groups = [{ key: 'certificates', labelKey: 'common.nav.sectionCertificates', items: certificates }]
@@ -280,16 +284,17 @@ watch(locale, () => {
       </main>
     </div>
 
-    <!-- One unlock dialog for the whole application. Any operation that needs a
-         private key can hit a locked vault -- signing, exporting, rotating --
-         and they all funnel through the store, so no page has to carry its own
-         open/retry bookkeeping. -->
-    <VaultUnlockDialog
-      :open="!!vault.unlockRequest"
-      :busy="vault.loading"
-      :reason="vault.unlockRequest?.reason || ''"
-      @close="vault.clearUnlock()"
-      @unlocked="vault.resolveUnlock()"
+    <!-- One credential dialog for the whole application. Any operation that needs
+         a private key can hit a locked credential -- signing, exporting, moving a
+         key, importing -- and they all funnel through the store, which carries the
+         credential the server named in its 409. -->
+    <KeystoreDialog
+      :open="!!keystore.unlockRequest"
+      :busy="keystore.loading"
+      :reason="keystore.unlockRequest?.reason || ''"
+      :credential-id="keystore.unlockRequest?.credentialId ?? null"
+      @close="keystore.clearUnlock()"
+      @unlocked="keystore.resolveUnlock()"
     />
   </div>
 </template>

@@ -16,14 +16,14 @@ import { useCertificateDownload } from '@/composables/useCertificateDownload'
 import ConfirmActionDialog from '@/components/ConfirmActionDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
-import { useVaultStore } from '@/stores/vault'
+import { useKeystoreStore } from '@/stores/keystore'
 import { useToastStore } from '@/stores/toasts'
 import { ApiError } from '@/api/client'
 
 const { t, d } = useI18n()
 const auth = useAuthStore()
 const certificates = useCertificatesStore()
-const vault = useVaultStore()
+const keystore = useKeystoreStore()
 const toasts = useToastStore()
 
 const busy = ref(false)
@@ -64,7 +64,8 @@ async function submit() {
   } catch (err) {
     if (err instanceof ApiError && err.vaultLocked) {
       // The shell owns the dialog; it retries this exact call once unlocked.
-      vault.requestUnlock(t('leaf.create.unlockReason'), submit)
+      keystore.requestUnlock({ reason: t('leaf.create.unlockReason'),
+        credentialId: err.credentialId, retry: submit })
       return
     }
     errors.value = err instanceof ApiError ? err.errors : [String(err)]

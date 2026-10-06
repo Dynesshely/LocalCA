@@ -33,7 +33,8 @@
       "noPrivateKey": "无私钥",
       "noPrivateKeyTitle": "该证书是导入的，未附带私钥。它可以被列出、吊销并以 PEM 格式下载，但不能用于签发，也无法生成 PKCS12 打包文件。",
       "keyNotEncrypted": "私钥未加密",
-      "keyNotEncryptedTitle": "该私钥早于加密功能出现，或者没有所有者，因此仍以明文保存。"
+      "keyNotEncryptedTitle": "该私钥早于加密功能出现，或者没有所有者，因此仍以明文保存。",
+      "credential": "凭证：{name}"
     },
     "action": {
       "publicKey": "公钥",

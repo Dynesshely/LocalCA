@@ -10,8 +10,25 @@ through the dedicated download endpoints, which check ownership themselves.
 """
 from django.utils import timezone
 
-from .keys import has_private_key, is_legacy_plaintext, is_wrapped
+from .keys import credential_of, has_private_key, is_legacy_plaintext, is_wrapped
+from .vault import unsealed
 from .models import RevokedCertificate
+
+
+def _credential_summary(cert):
+    '''
+    Which keystore credential wraps this certificate's key, and whether it is
+    open. Naming it is the point: "encrypted" is not actionable when an account
+    can hold several credentials, each with its own password.
+    '''
+    credential = credential_of(cert)
+    if credential is None:
+        return None
+    return {
+        'id': credential.id,
+        'name': credential.name,
+        'unlocked': unsealed.is_unsealed(credential.id),
+    }
 
 
 def certificate_common(cert, kind, user):
@@ -47,11 +64,13 @@ def certificate_common(cert, kind, user):
         # in a payload as a leak signal and should keep doing so.
         'has_key': has_private_key(cert),
         # Whether the private key is encrypted at rest. False means it predates
-        # the vault, or belongs to a certificate with no owner and therefore no
-        # password to wrap it with. The UI surfaces this rather than implying all
+        # the keystore, or belongs to a certificate with no owner and therefore no
+        # credential to wrap it with. The UI surfaces this rather than implying all
         # keys are protected.
         'protected': is_wrapped(cert),
         'unprotected_legacy': is_legacy_plaintext(cert),
+        # Which credential wraps it (None for cleartext and ownerless keys).
+        'key_credential': _credential_summary(cert),
     }
 
 
