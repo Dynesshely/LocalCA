@@ -34,7 +34,9 @@
       "noPrivateKeyTitle": "This certificate was imported without its private key. It can be listed, revoked and downloaded as PEM, but it cannot sign and no PKCS12 bundle can be produced.",
       "keyNotEncrypted": "key not encrypted",
       "keyNotEncryptedTitle": "This private key predates encryption or has no owner, so it is still stored in cleartext.",
-      "credential": "credential: {name}"
+      "credential": "credential: {name}",
+      "renewed": "renewed",
+      "renewedTitle": "This certificate was replaced by a renewal. Open the renewal from the leaf table."
     },
     "action": {
       "publicKey": "Public key",

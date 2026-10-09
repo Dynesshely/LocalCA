@@ -468,6 +468,7 @@ class ReverseProxyConfigurationTests(TestCase):
             'api:my_certificates': [],
             'api:issuers': [],
             'api:create_certificate': ['leaf'],
+            'api:renew_leaf_certificate': [1],
             'api:revoke_certificate': ['leaf', 1],
             'api:delete_certificate': ['leaf', 1],
             'api:download': ['12345', 'pem'],

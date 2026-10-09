@@ -20,7 +20,7 @@ const props = defineProps({
 
 // `download` carries `{ certificate, format }`: which format exists, and what
 // each one requires, is the server's table, not this component's business.
-const emit = defineEmits(['download', 'revoke', 'delete'])
+const emit = defineEmits(['download', 'renew', 'revoke', 'delete'])
 
 const { t, d } = useI18n()
 
@@ -167,6 +167,25 @@ function formatExpiry() {
         </span>
 
         <template v-if="certificate.can_manage">
+          <!-- Renewal is a leaf operation: a CA has no SAN list to edit. A leaf
+               that already has a successor says so instead of offering another. -->
+          <span
+            v-if="certificate.kind === 'leaf' && certificate.renewed_by"
+            class="inline-block whitespace-nowrap rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+            :title="t('renew.chipTitle', { serial: certificate.renewed_by.serial_number })"
+            :data-testid="`renewed-${certificate.kind}-${certificate.id}`"
+          >
+            {{ t('renew.chip') }}
+          </span>
+          <button
+            v-else-if="certificate.kind === 'leaf'"
+            type="button"
+            class="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-700"
+            :data-testid="`renew-${certificate.kind}-${certificate.id}`"
+            @click="emit('renew', certificate)"
+          >
+            {{ t('renew.button') }}
+          </button>
           <button
             v-if="!certificate.revocation"
             type="button"

@@ -290,7 +290,6 @@ watch(locale, () => {
          credential the server named in its 409. -->
     <KeystoreDialog
       :open="!!keystore.unlockRequest"
-      :busy="keystore.loading"
       :reason="keystore.unlockRequest?.reason || ''"
       :credential-id="keystore.unlockRequest?.credentialId ?? null"
       @close="keystore.clearUnlock()"

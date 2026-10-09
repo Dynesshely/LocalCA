@@ -114,6 +114,18 @@ def leaf_to_dict(leaf, user, revocation=None):
         'id': leaf.signed_by_intermediate_id,
         'name': leaf.signed_by_intermediate.name,
     }
+    # The certificate that replaced this one, when it was renewed. The interface
+    # uses it to point at the live certificate instead of offering a second
+    # renewal of a row that already has a successor.
+    data['renewed_by'] = (
+        {
+            'id': leaf.renewed_by_id,
+            'serial_number': leaf.renewed_by.serial_number,
+            'valid_until': (leaf.renewed_by.valid_until.isoformat()
+                            if leaf.renewed_by.valid_until else None),
+        }
+        if leaf.renewed_by_id else None
+    )
     data['revocation'] = revocation_summary(revocation)
     return data
 

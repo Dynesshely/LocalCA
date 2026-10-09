@@ -14,6 +14,7 @@ import DownloadMenu from '@/components/DownloadMenu.vue'
 import ExportDialog from '@/components/ExportDialog.vue'
 import { useCertificateDownload } from '@/composables/useCertificateDownload'
 import ConfirmActionDialog from '@/components/ConfirmActionDialog.vue'
+import RenewLeafDialog from '@/components/RenewLeafDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
 import { useKeystoreStore } from '@/stores/keystore'
@@ -27,6 +28,8 @@ const keystore = useKeystoreStore()
 const toasts = useToastStore()
 
 const busy = ref(false)
+/** The leaf the renewal dialog is open for, or null. */
+const renewing = ref(null)
 const downloads = useCertificateDownload()
 
 const errors = ref([])
@@ -45,12 +48,17 @@ const myLeaves = computed(() =>
   certificates.flat.filter((c) => c.kind === 'leaf' && c.is_owner))
 
 onMounted(async () => {
+  await reload()
+})
+
+/** Re-read the tree; a renewal changes both the leaf list and the issuer list. */
+async function reload() {
   try {
     await Promise.all([certificates.load(), certificates.loadIssuers()])
   } catch (err) {
     toasts.error(t('common.error.couldNotLoadCertificates', { message: err.message }))
   }
-})
+}
 
 async function submit() {
   errors.value = []
@@ -280,6 +288,26 @@ function formatDay(value) {
                         :has-key="leaf.has_key !== false"
                         @choose="(format) => downloads.run(leaf, format)"
                       />
+                      <!-- Renewal replaces the certificate, so a leaf that
+                           already has a successor offers the chip instead of a
+                           second renewal. -->
+                      <span
+                        v-if="leaf.renewed_by"
+                        class="inline-block whitespace-nowrap rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+                        :title="t('renew.chipTitle', { serial: leaf.renewed_by.serial_number })"
+                        :data-testid="`renewed-leaf-${leaf.id}`"
+                      >
+                        {{ t('renew.chip') }}
+                      </span>
+                      <button
+                        v-else
+                        type="button"
+                        class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
+                        :data-testid="`renew-leaf-${leaf.id}`"
+                        @click="renewing = leaf"
+                      >
+                        {{ t('renew.button') }}
+                      </button>
                       <button
                         v-if="!leaf.revocation"
                         type="button"
@@ -324,5 +352,14 @@ function formatDay(value) {
     :busy="downloads.busy.value || busy"
     @close="downloads.cancel()"
     @confirm="downloads.submit"
+  />
+
+  <!-- Kept mounted (open is a prop, not a v-if) so the retry after opening a
+       credential can still report its result once the dialog has closed. -->
+  <RenewLeafDialog
+    :open="!!renewing"
+    :certificate="renewing"
+    @close="renewing = null"
+    @renewed="reload"
   />
 </template>

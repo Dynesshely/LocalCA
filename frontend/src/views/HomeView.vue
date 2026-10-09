@@ -15,6 +15,7 @@ import { useI18n } from 'vue-i18n'
 import CertificateTree from '@/components/CertificateTree.vue'
 import ConfirmActionDialog from '@/components/ConfirmActionDialog.vue'
 import ExportDialog from '@/components/ExportDialog.vue'
+import RenewLeafDialog from '@/components/RenewLeafDialog.vue'
 import { useCertificateDownload } from '@/composables/useCertificateDownload'
 import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
@@ -33,6 +34,8 @@ const busy = ref(false)
 const actionTarget = ref(null)
 const actionKind = ref('revoke')       // 'revoke' | 'delete'
 const actionOpen = ref(false)
+/** The leaf the renewal dialog is open for, or null. */
+const renewing = ref(null)
 const query = ref('')
 
 const dialogCertificate = computed(() => {
@@ -71,13 +74,16 @@ const filteredTree = computed(() => {
 
 const totalCount = computed(() => certificates.flat.length)
 
-onMounted(async () => {
+onMounted(reload)
+
+/** Re-read the tree and the keystore: a renewal changes both. */
+async function reload() {
   try {
     await Promise.all([certificates.load(), keystore.load()])
   } catch (err) {
     toasts.error(t('common.error.couldNotLoadCertificates', { message: err.message }))
   }
-})
+}
 
 function openAction(kind, certificate) {
   if (!auth.isAuthenticated) {
@@ -222,6 +228,7 @@ function onDownload({ certificate, format }) {
       v-else
       :tree="filteredTree"
       @download="onDownload"
+      @renew="(c) => (renewing = c)"
       @revoke="(c) => openAction('revoke', c)"
       @delete="(c) => openAction('delete', c)"
     />
@@ -243,6 +250,14 @@ function onDownload({ certificate, format }) {
       :busy="downloads.busy.value || busy"
       @close="downloads.cancel()"
       @confirm="downloads.submit"
+    />
+
+    <!-- Kept mounted so the retry after opening a credential can still report. -->
+    <RenewLeafDialog
+      :open="!!renewing"
+      :certificate="renewing"
+      @close="renewing = null"
+      @renewed="reload"
     />
   </div>
 </template>

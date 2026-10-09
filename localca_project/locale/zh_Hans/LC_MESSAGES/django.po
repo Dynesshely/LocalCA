@@ -43,6 +43,9 @@ msgstr "还没有任何密钥库凭证，无法保存私钥。请先创建一个
 msgid "No keystore credential was given, so the private key cannot be stored."
 msgstr "未指定密钥库凭证，无法保存私钥。"
 
+msgid "That certificate does not exist."
+msgstr "该证书不存在。"
+
 msgid "The keystore credential "%(name)s" is locked. Open it to export this private key."
 msgstr "密钥库凭证“%(name)s”处于锁定状态，导出该私钥前请先解锁它。"
 
@@ -52,11 +55,17 @@ msgstr "密钥库凭证“%(name)s”处于锁定状态，保存即将生成的�
 msgid "The keystore credential "%(name)s" is locked. Open it to store the private keys carried by this import."
 msgstr "密钥库凭证“%(name)s”处于锁定状态，保存本次导入携带的私钥前请先解锁它。"
 
+msgid "The keystore credential "%(name)s" is locked. Open it to store the renewed private key."
+msgstr "密钥库凭证“%(name)s”处于锁定状态，保存续期后的私钥前请先解锁它。"
+
 msgid "The keystore credential "%(name)s" is locked."
 msgstr "密钥库凭证“%(name)s”处于锁定状态。"
 
 msgid "The new vault password must be at least 8 characters."
 msgstr "新的密钥库口令至少 8 位。"
+
+msgid "This certificate was already renewed as %(serial)s. Renew that one instead."
+msgstr "该证书已续期为 %(serial)s，请改为续期那一张。"
 
 msgid "This keystore credential is locked."
 msgstr "该密钥库凭证处于锁定状态。"
@@ -66,6 +75,9 @@ msgstr "该私钥已不再关联任何凭证，无法解密。"
 
 msgid "Unknown certificate kind."
 msgstr "未知的证书类型。"
+
+msgid "You can only renew a certificate you own."
+msgstr "只能续期属于你自己账号的证书。"
 
 msgid "\"%(name)s\" is already in use by another certificate. Certificate names must be unique."
 msgstr "“%(name)s”已被另一张证书占用。证书名称必须唯一。"

@@ -21,6 +21,7 @@ from .models import (
     LeafCertificate,
     RevokedCertificate,
     RootCertificate,
+    VaultCredential,
 )
 
 
@@ -615,6 +616,186 @@ class CertificateCreationApiTests(ApiTestBase):
         self.client.login(username='api-owner', password='pw-Owner-123')
         response = self.post_form('/api/certificates/create/bogus/', {'common_name': 'x'})
         self.assertEqual(response.status_code, 404)
+
+
+class LeafRenewalApiTests(ApiTestBase):
+    '''
+    Renewing a leaf: the SAN list may change, the certificate may not.
+
+    The rule worth pinning down is that renewal *issues a new certificate* -- new
+    serial, new key pair, same common name and issuer -- and that the old row
+    survives as the record of what was actually deployed, pointing at its
+    replacement.
+    '''
+
+    def setUp(self):
+        super().setUp()
+        self.client.login(username='api-owner', password='pw-Owner-123')
+
+    def url(self, leaf=None):
+        return reverse('api:renew_leaf_certificate', args=[(leaf or self.leaf).id])
+
+    def renew(self, leaf=None, **payload):
+        body = {'san': 'api.internal, 10.1.2.3', 'validity_days': '365'}
+        body.update(payload)
+        return self.post_form(self.url(leaf), body)
+
+    def test_renewal_issues_a_new_certificate_with_the_edited_sans(self):
+        response = self.renew(san='api.internal, new.internal, 10.9.9.9')
+        self.assertEqual(response.status_code, 201)
+        issued = response.json()['certificate']
+
+        replacement = LeafCertificate.objects.get(pk=issued['id'])
+        self.assertNotEqual(replacement.pk, self.leaf.pk)
+        self.assertEqual(replacement.common_name, self.leaf.common_name)
+        self.assertEqual(replacement.signed_by_intermediate_id,
+                         self.leaf.signed_by_intermediate_id)
+        self.assertNotEqual(replacement.serial_number, self.leaf.serial_number)
+        # The common name is prepended to the SAN list, exactly as on creation.
+        self.assertEqual(stored_sans(replacement),
+                         ['api.internal', 'new.internal', '10.9.9.9'])
+        self.assertEqual(issued['sans'], stored_sans(replacement))
+
+    def test_the_replacement_has_its_own_key_and_a_matching_certificate(self):
+        from cryptography import x509
+        from cryptography.hazmat.primitives import serialization
+
+        from LocalCA.keys import private_key_pem
+
+        response = self.renew()
+        replacement = LeafCertificate.objects.get(pk=response.json()['certificate']['id'])
+
+        # A renewal re-keys: the replacement must not reuse the old private key.
+        # The stored form is the wrapped envelope, so it is read back the way the
+        # application reads it.
+        key_pem = private_key_pem(replacement, 'leaf', self.owner)
+        self.assertNotEqual(key_pem.strip(),
+                            self.leaf.private_key_encrypted.strip())
+        self.assertNotIn('PRIVATE KEY', replacement.private_key_wrapped)
+
+        parsed = x509.load_pem_x509_certificate(replacement.public_key.encode())
+        key = serialization.load_pem_private_key(key_pem.encode(), password=None)
+        self.assertEqual(
+            key.public_key().public_bytes(
+                serialization.Encoding.PEM,
+                serialization.PublicFormat.SubjectPublicKeyInfo),
+            parsed.public_key().public_bytes(
+                serialization.Encoding.PEM,
+                serialization.PublicFormat.SubjectPublicKeyInfo))
+
+    def test_the_old_certificate_survives_and_is_superseded(self):
+        before = self.leaf.public_key
+        response = self.renew()
+        replacement_id = response.json()['certificate']['id']
+
+        self.leaf.refresh_from_db()
+        self.assertEqual(self.leaf.public_key, before)     # bytes untouched
+        self.assertEqual(self.leaf.renewed_by_id, replacement_id)
+        revocation = RevokedCertificate.objects.get(certificate=self.leaf)
+        self.assertEqual(revocation.reason,
+                         RevokedCertificate.RevocationReason.SUPERSEDED)
+        self.assertIn('Renewed as', revocation.comment)
+        self.assertTrue(response.json()['previous']['revoked'])
+
+    def test_a_certificate_can_only_be_renewed_once(self):
+        first = self.renew()
+        self.assertEqual(first.status_code, 201)
+        again = self.renew()
+        self.assertEqual(again.status_code, 409)
+        self.assertEqual(again.json()['renewed_by'], first.json()['certificate']['id'])
+        # And nothing extra was issued.
+        self.assertEqual(
+            LeafCertificate.objects.filter(common_name=self.leaf.common_name).count(), 2)
+
+    def test_renewing_an_already_revoked_certificate_keeps_its_reason(self):
+        RevokedCertificate.objects.create(
+            created_by=self.owner,
+            reason=RevokedCertificate.RevocationReason.KEY_COMPROMISE,
+            comment='laptop stolen',
+            certificate=self.leaf)
+
+        response = self.renew(san='api.internal')
+        self.assertEqual(response.status_code, 201)
+        self.assertFalse(response.json()['previous']['revoked'])
+        revocation = RevokedCertificate.objects.get(certificate=self.leaf)
+        self.assertEqual(revocation.reason,
+                         RevokedCertificate.RevocationReason.KEY_COMPROMISE)
+        self.assertEqual(revocation.comment, 'laptop stolen')
+
+    def test_the_common_name_cannot_be_changed_by_the_request(self):
+        response = self.renew(common_name='attacker.internal', san='api.internal')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()['certificate']['name'], 'api.internal')
+
+    def test_renewal_requires_ownership(self):
+        self.client.login(username='api-other', password='pw-Other-123')
+        response = self.renew()
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response['Content-Type'], 'application/json')
+        self.assertIn('you own', response.json()['errors'][0])
+
+    def test_renewal_requires_authentication(self):
+        self.client.logout()
+        self.assertEqual(self.renew().status_code, 401)
+
+    def test_renewing_something_that_is_not_there_is_a_404(self):
+        response = self.post_form(
+            reverse('api:renew_leaf_certificate', args=[999999]),
+            {'san': 'x.internal', 'validity_days': '30'})
+        self.assertEqual(response.status_code, 404)
+
+    def test_renewal_needs_the_signing_credential_open(self):
+        from LocalCA.keys import store_wrapped_key
+        credential = self.credential_for(self.owner)
+        store_wrapped_key(self.intermediate, 'intermediate',
+                          self.intermediate.private_key_encrypted, credential)
+        self.lock_vault(self.owner)
+
+        response = self.renew()
+        self.assertEqual(response.status_code, 409)
+        body = response.json()
+        self.assertTrue(body['vault_locked'])
+        self.assertEqual(body['credential_id'], credential.id)
+        self.assertFalse(
+            LeafCertificate.objects.filter(renewed_by__isnull=False).exists())
+
+    def test_the_validity_still_cannot_outlive_the_intermediate(self):
+        response = self.renew(validity_days='5000')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('825', ' '.join(response.json()['errors']))
+
+    def test_the_replacement_stays_under_the_credential_that_held_the_old_key(self):
+        from LocalCA.keys import create_credential, move_to_credential
+        self.credential_for(self.owner)                 # the account's default
+        lab = create_credential(self.owner, 'Lab', self.VAULT_PASSWORD)
+        move_to_credential(self.leaf, 'leaf', lab)
+
+        response = self.renew()
+        self.assertEqual(response.status_code, 201)
+        replacement = LeafCertificate.objects.get(
+            pk=response.json()['certificate']['id'])
+        self.assertEqual(replacement.key_credential_id, lab.id)
+        self.assertEqual(response.json()['credential']['name'], 'Lab')
+
+    def test_an_explicit_credential_wins(self):
+        from LocalCA.keys import create_credential
+        production = create_credential(self.owner, 'Production', self.VAULT_PASSWORD)
+
+        response = self.renew(credential_id=str(production.id))
+        self.assertEqual(response.status_code, 201)
+        replacement = LeafCertificate.objects.get(
+            pk=response.json()['certificate']['id'])
+        self.assertEqual(replacement.key_credential_id, production.id)
+
+    def test_renewal_is_audited_on_both_sides(self):
+        self.renew()
+        details = [entry.details for entry in AuditLog.objects.all()]
+        self.assertTrue(any('Renewed leaf certificate' in text for text in details))
+        self.assertTrue(any('reason: superseded' in text for text in details))
+
+    def test_a_bad_san_list_is_a_400_not_a_crash(self):
+        response = self.renew(san='\x00bad.internal')
+        self.assertEqual(response.status_code, 400)
 
 
 class RevokeDeleteApiTests(ApiTestBase):

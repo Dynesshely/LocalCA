@@ -108,6 +108,20 @@ class LeafCertificate(models.Model):
         blank=True)
     signed_by_intermediate = models.ForeignKey(
         IntermediateCertificate, on_delete=models.CASCADE)
+    #: The certificate that replaced this one when it was renewed.
+    #:
+    #: Renewal issues a *new* certificate rather than mutating this row: a
+    #: certificate is what it was signed as, and rewriting its SANs or serial in
+    #: place would leave every deployed copy describing something that never
+    #: existed. So the old row keeps its bytes, points forward to its replacement,
+    #: and is revoked as `superseded` -- which is also what makes a second
+    #: renewal of the same certificate refusable instead of silently duplicating.
+    renewed_by = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        related_name='replaces',
+        null=True,
+        blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

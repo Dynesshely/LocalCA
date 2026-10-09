@@ -1,0 +1,22 @@
+{
+  "renew": {
+    "button": "Renew",
+    "title": "Renew “{name}”",
+    "intro": "Issues a new certificate with the same common name and issuer, and a fresh key pair. The certificate being replaced is revoked as superseded and keeps a pointer to the replacement, so what was deployed stays on the record.",
+    "commonName": "Common name",
+    "commonNameHelp": "A renewal keeps the common name. To change it, issue a new certificate instead.",
+    "issuer": "Signed by",
+    "none": "—",
+    "san": "Subject alternative names",
+    "sanHelp": "One name per line, or separated by commas. The common name is always included, and the key pair is regenerated.",
+    "validity": "Valid for (days)",
+    "validityHelp": "Counted from now, and it cannot outlive the signing intermediate CA.",
+    "submit": "Issue replacement",
+    "submitting": "Issuing…",
+    "success": "Renewed {name}: new serial {serial}",
+    "unlockReason": "Renewing “{name}” needs the signing CA's private key",
+    "chip": "renewed",
+    "chipTitle": "This certificate was replaced by a renewal; the live one carries serial {serial}.",
+    "linkTitle": "Open the renewal in the table below"
+  }
+}

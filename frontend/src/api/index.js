@@ -67,6 +67,15 @@ export const certificates = {
   issuers: () => request('/api/issuers/'),
   create: (kind, payload) =>
     request(`/api/certificates/create/${kind}/`, { method: 'POST', body: payload }),
+  /**
+   * Re-issue a leaf with an edited SAN list.
+   *
+   * The common name and issuer are inherited by the server; only the SANs and the
+   * validity are the caller's to choose. The replacement is a new certificate and
+   * the old one is revoked as superseded.
+   */
+  renew: (id, payload) =>
+    request(`/api/certificates/leaf/${id}/renew/`, { method: 'POST', body: payload }),
   revoke: (kind, id, payload) =>
     request(`/api/certificates/${kind}/${id}/revoke/`, { method: 'POST', body: payload }),
   remove: (kind, id) =>

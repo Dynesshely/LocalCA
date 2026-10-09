@@ -22,6 +22,11 @@ import { useKeystoreStore } from '@/stores/keystore'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
+  /**
+   * Busy *because of this dialog*. A background inventory refresh must not
+   * disable the form: opening the dialog triggers one, and a click landing in
+   * that window would do nothing at all.
+   */
   busy: { type: Boolean, default: false },
   /** Why the dialog opened, shown to orient the reader. */
   reason: { type: String, default: '' },
@@ -36,6 +41,8 @@ const { t } = useI18n()
 
 const password = ref('')
 const name = ref('')
+/** True while this dialog's own request is in flight. */
+const submitting = ref(false)
 const encryptExisting = ref(true)
 const localError = ref('')
 
@@ -77,7 +84,11 @@ watch(
 )
 
 async function submit() {
+  if (submitting.value) {
+    return
+  }
   localError.value = ''
+  submitting.value = true
   try {
     if (mode.value === 'create') {
       await keystore.create(name.value.trim(), password.value)
@@ -88,8 +99,12 @@ async function submit() {
     emit('unlocked')
   } catch (err) {
     localError.value = keystore.error || t('dialog.keystore.error')
+  } finally {
+    submitting.value = false
   }
 }
+
+const working = computed(() => props.busy || submitting.value)
 </script>
 
 <template>
@@ -173,7 +188,7 @@ async function submit() {
         <button
           type="button"
           class="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-          :disabled="busy"
+          :disabled="working"
           @click="emit('close')"
         >
           {{ t('common.action.cancel') }}
@@ -181,7 +196,7 @@ async function submit() {
         <button
           type="submit"
           class="rounded-lg bg-brand-700 px-3 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
-          :disabled="busy || !canSubmit"
+          :disabled="working || !canSubmit"
           data-testid="vault-unseal"
         >
           {{ mode === 'create'

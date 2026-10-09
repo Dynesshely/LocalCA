@@ -1,0 +1,22 @@
+{
+  "renew": {
+    "button": "更新",
+    "title": "更新「{name}」",
+    "intro": "用相同的 Common Name 与签发者、以及全新的密钥对重新签发一张证书。被替换的那张会以「已被取代」吊销，并保留指向新证书的引用，已部署过的内容仍然留档。",
+    "commonName": "Common Name",
+    "commonNameHelp": "更新会保留 Common Name；要改名字请改为新签一张证书。",
+    "issuer": "签发者",
+    "none": "—",
+    "san": "SAN（备用名称）",
+    "sanHelp": "一行一个，或用英文逗号分隔。Common Name 会自动包含在内，密钥对会重新生成。",
+    "validity": "有效期（天）",
+    "validityHelp": "从现在起算，且不能超过签发它的中间 CA 的剩余有效期。",
+    "submit": "签发替换证书",
+    "submitting": "签发中…",
+    "success": "已更新 {name}：新序列号 {serial}",
+    "unlockReason": "更新「{name}」需要使用签发 CA 的私钥",
+    "chip": "已更新",
+    "chipTitle": "这张证书已被更新替换，当前生效的是序列号 {serial}。",
+    "linkTitle": "在下方列表中查看新证书"
+  }
+}

@@ -60,19 +60,27 @@ class CertificateForm(forms.Form):
     validity_days = _validity_field(MAX_CA_VALIDITY_DAYS)
 
     #: Model whose ``name`` column this form writes to, and the field that
-    #: column is populated from. Both certificate names and leaf common names
-    #: are declared UNIQUE in the models, so the value has to be checked before
-    #: the insert: an IntegrityError here is an unhandled 500, not an error
-    #: message.
+    #: column is populated from. CA names are declared UNIQUE in the models, so
+    #: the value has to be checked before the insert: an IntegrityError here is an
+    #: unhandled 500, not an error message. Leaf common names are checked too,
+    #: which is what stops one account accumulating identical leaves.
     name_model = None
     name_field = 'name'
+
+    def __init__(self, *args, renewing=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        #: The certificate this form re-issues, when the request is a renewal. A
+        #: renewal deliberately keeps the common name, so that one row must not
+        #: count as a collision with itself.
+        self.renewing = renewing
 
     def clean_common_name(self):
         common_name = self.cleaned_data['common_name']
         if not common_name.strip():
             raise forms.ValidationError(_('Common name cannot be empty.'))
         if self.name_model is not None and self.name_model.objects.filter(
-                **{self.name_field: common_name}).exists():
+                **{self.name_field: common_name}
+        ).exclude(pk=getattr(self.renewing, 'pk', None)).exists():
             raise forms.ValidationError(
                 _('"%(name)s" is already in use by another certificate. '
                   'Certificate names must be unique.') % {'name': common_name}

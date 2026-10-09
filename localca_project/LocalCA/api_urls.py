@@ -48,6 +48,8 @@ urlpatterns = [
     path('import/', api.api_import_certificates, name='import_certificates'),
     path('certificates/create/<str:cert_type>/', api.api_create_certificate,
          name='create_certificate'),
+    path('certificates/leaf/<int:cert_id>/renew/', api.api_renew_leaf_certificate,
+         name='renew_leaf_certificate'),
     path('certificates/<str:cert_type>/<int:cert_id>/revoke/',
          api.api_revoke_certificate, name='revoke_certificate'),
     path('certificates/<str:cert_type>/<int:cert_id>/delete/',

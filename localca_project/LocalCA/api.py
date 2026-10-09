@@ -51,6 +51,7 @@ from .keys import (
     change_credential_password,
     create_credential,
     credential_key_count,
+    credential_of,
     credential_root_key,
     credentials_for,
     default_credential,
@@ -922,6 +923,162 @@ def api_create_certificate(request, cert_type):
         'serial_number': certificate.serial_number,
         'valid_until': certificate.valid_until.isoformat(),
     }}, status=201)
+
+
+# --------------------------------------------------------------------------
+# write: renewal
+# --------------------------------------------------------------------------
+
+@require_POST
+def api_renew_leaf_certificate(request, cert_id):
+    '''
+    Re-issue a leaf certificate with an edited SAN list.
+
+    Renewal is a *new* certificate, not an edit: a certificate is what it was
+    signed as, so rewriting this row's SANs or serial would leave every deployed
+    copy describing something that never existed. The old row keeps its bytes,
+    gains a pointer to its replacement (`renewed_by`), and is revoked as
+    `superseded` unless it already was -- so the answer to "which certificate is
+    live for this name?" stays unambiguous.
+
+    The common name and the signing intermediate are inherited, and the key pair
+    is always regenerated: re-issuing around a key that may have leaked is the
+    point of renewal.
+    '''
+    if not request.user.is_authenticated:
+        return _error(_('Authentication required.'), status=401)
+
+    leaf = LeafCertificate.objects.filter(pk=cert_id).first()
+    if leaf is None:
+        return _error(_('That certificate does not exist.'), status=404)
+    if not can_manage_certificate(request.user, leaf):
+        return _error(_('You can only renew a certificate you own.'), status=403)
+    if leaf.renewed_by_id:
+        return _error(
+            _('This certificate was already renewed as %(serial)s. Renew that '
+              'one instead.')
+            % {'serial': leaf.renewed_by.serial_number}, status=409,
+            renewed_by=leaf.renewed_by_id)
+
+    data = _payload(request)
+    # The common name is inherited rather than accepted: changing it is issuing a
+    # different certificate, which is what Create Leaf is for. `renewing` tells the
+    # form that this one row is allowed to keep the name it already has.
+    form = LeafCertificateForm(
+        {
+            'common_name': leaf.common_name,
+            'san': data.get('san', ''),
+            'validity_days': data.get('validity_days'),
+            'intermediate_id': leaf.signed_by_intermediate_id,
+        },
+        user=request.user,
+        renewing=leaf,
+    )
+    if not form.is_valid():
+        return _form_error_response(form)
+
+    intermediate = form.cleaned_data['intermediate_id']
+    sans = form.san_list()
+
+    # Signing consumes the intermediate's key, so *its* credential has to be open
+    # -- which is not necessarily the one the new key will be stored under.
+    try:
+        issuer_key = private_key_pem(intermediate, 'intermediate', request.user)
+    except KeyUnavailable as exc:
+        return _error(str(exc), status=409)
+    except VaultLocked as exc:
+        return _vault_locked(str(exc), exc.credential)
+
+    # The replacement key stays where the old one was: an operator who filed this
+    # certificate under "Production" did not ask for it to move. An explicit
+    # `credential_id` still wins, and a cleartext or credential-less old key falls
+    # back to the account's default.
+    requested = data.get('credential_id')
+    if requested:
+        credential, error = _credential_or_error(request, requested)
+    else:
+        credential = credential_of(leaf) or default_credential(request.user)
+        error = None if credential is not None else _vault_locked(_(
+            'No keystore credential exists yet, so private keys cannot be '
+            'stored. Create one (a name and a password) first.'))
+    if error:
+        return error
+    try:
+        credential_root_key(credential)
+    except VaultLocked as exc:
+        return _vault_locked(
+            _('The keystore credential "%(name)s" is locked. Open it to store '
+              'the renewed private key.') % {'name': credential.name},
+            exc.credential)
+
+    ca = CertificateAuthority()
+    try:
+        issued = ca.create_leaf_certificate(
+            common_name=leaf.common_name,
+            san_list=sans,
+            validity_days=form.cleaned_data['validity_days'],
+            intermediate_public_key=intermediate.public_key,
+            intermediate_private_key=issuer_key,
+        )
+    except ValueError as exc:
+        return _error(_('Could not create the certificate: %(error)s')
+                      % {'error': exc})
+
+    with transaction.atomic():
+        replacement = LeafCertificate.objects.create(
+            common_name=leaf.common_name,
+            san=','.join(sans),
+            valid_until=issued['valid_until'],
+            serial_number=str(issued['serial_number']),
+            public_key=issued['public_key'],
+            private_key_encrypted='',
+            signed_by_intermediate=intermediate,
+            created_by=request.user,
+        )
+        store_wrapped_key(replacement, 'leaf', issued['private_key'], credential)
+
+        # Supersede the old one, but never rewrite a revocation that is already
+        # there: a certificate revoked for key compromise stays revoked for that
+        # reason, and a renewal is not a way to launder that history.
+        revoked_previous = not RevokedCertificate.objects.filter(
+            certificate=leaf).exists()
+        if revoked_previous:
+            RevokedCertificate.objects.create(
+                created_by=request.user,
+                reason=RevokedCertificate.RevocationReason.SUPERSEDED,
+                comment=(f'Renewed as {replacement.serial_number} '
+                         f'({", ".join(sans)})'),
+                certificate=leaf,
+            )
+        leaf.renewed_by = replacement
+        leaf.save(update_fields=['renewed_by'])
+
+    AuditLog.objects.create(
+        action='CREATE', performed_by=request.user,
+        details=(f'Renewed leaf certificate "{leaf.common_name}" '
+                 f'({leaf.serial_number} -> {replacement.serial_number})'))
+    if revoked_previous:
+        AuditLog.objects.create(
+            action='REVOKE', performed_by=request.user,
+            details=(f'Revoked leaf certificate: {leaf.common_name} '
+                     f'(reason: superseded, renewed as {replacement.serial_number})'))
+
+    return _ok({
+        'certificate': {
+            'kind': 'leaf',
+            'id': replacement.id,
+            'name': replacement.common_name,
+            'serial_number': replacement.serial_number,
+            'valid_until': replacement.valid_until.isoformat(),
+            'sans': sans,
+        },
+        'previous': {
+            'id': leaf.id,
+            'serial_number': leaf.serial_number,
+            'revoked': revoked_previous,
+        },
+        'credential': _credential_to_dict(credential),
+    }, status=201)
 
 
 # --------------------------------------------------------------------------
