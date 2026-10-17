@@ -38,17 +38,6 @@
       "renewed": "已更新",
       "renewedTitle": "这张证书已被更新替换，可在叶证书列表中查看新证书。"
     },
-    "action": {
-      "publicKey": "公钥",
-      "publicChain": "证书链",
-      "exportPkcs12": "导出 PKCS12"
-    },
-    "pkcs12": {
-      "success": "已下载“{name}”的 PKCS12 打包文件。",
-      "unlockReason": "导出“{name}”的私钥需要先解锁密钥库。",
-      "tooltipProtected": "导出一个受密码保护的 PKCS12 打包文件",
-      "tooltipUnprotected": "该私钥未加密，但导出的打包文件仍受密码保护"
-    },
     "expiry": {
       "expiredAgo": "（已过期 {count} 天）",
       "inDays": "（还有 {count} 天）"

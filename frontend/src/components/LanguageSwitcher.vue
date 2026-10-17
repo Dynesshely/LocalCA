@@ -1,25 +1,16 @@
 <script setup>
 /**
- * Language switch, drawn by the application rather than by the platform.
+ * The language switch, drawn here rather than by the platform.
  *
- * A native `<select>` would be the accessible default, but its popup is painted
- * by the operating system: it ignores the app's theme (the dark interface got a
- * light list, and the option colours that were set on `<option>` are advisory
- * only), it cannot carry a border radius or a transition, and it sits outside
- * the design language the rest of the chrome follows. So the list is drawn here,
- * with the same border/radius/colour vocabulary as every other control.
+ * A native `<select>` gets an OS-painted popup: it ignored the dark theme and
+ * could not carry the border and radius the rest of the chrome uses. This follows
+ * the ARIA "select-only combobox" pattern instead — focus stays on the button
+ * (`role="combobox"`, `aria-expanded`, `aria-activedescendant`), the popup is a
+ * `role="listbox"`, and the keys are handled explicitly. Keeping focus on the
+ * button also keeps the browser's focus ring off the popup.
  *
- * The keyboard and ARIA behaviour a combo box needs is implemented explicitly,
- * after the "select-only combobox" pattern: focus never leaves the button, which
- * carries `role="combobox"`, `aria-expanded` and `aria-activedescendant`, while
- * the popup is a `role="listbox"` whose highlighted option is the active
- * descendant. Keeping focus on the button also keeps the focus ring on it,
- * instead of putting a browser-painted ring around the popup.
- *
- * The globe stays in front of the current language because a bare two-letter
- * word does not say "this changes the language", and each option carries `lang`
- * so it is rendered in its own script -- the only label a reader who cannot read
- * the current interface can act on.
+ * Each option carries `lang` so a reader who cannot read the current interface
+ * still recognises their own language.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'

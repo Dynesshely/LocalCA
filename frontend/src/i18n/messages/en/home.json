@@ -38,17 +38,6 @@
       "renewed": "renewed",
       "renewedTitle": "This certificate was replaced by a renewal. Open the renewal from the leaf table."
     },
-    "action": {
-      "publicKey": "Public key",
-      "publicChain": "Public chain",
-      "exportPkcs12": "Export PKCS12"
-    },
-    "pkcs12": {
-      "success": "PKCS12 bundle for “{name}” downloaded.",
-      "unlockReason": "Unlock to export the private key for “{name}”.",
-      "tooltipProtected": "Exports a password-protected PKCS12 bundle",
-      "tooltipUnprotected": "This key is not encrypted; export is still password-protected"
-    },
     "expiry": {
       "expiredAgo": "(expired {count} day ago) | (expired {count} days ago)",
       "inDays": "(in {count} day) | (in {count} days)"

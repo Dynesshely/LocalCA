@@ -83,20 +83,19 @@ UNSUPPORTED_FORMATS = (
 )
 
 
-class ImportError_(Exception):
+class ImportProblem(Exception):
     """Base class for a rejected submission."""
 
 
-# ``ImportError`` is a Python builtin, so the public name is aliased below.
-class UploadTooLarge(ImportError_):
+class UploadTooLarge(ImportProblem):
     '''A file, the submission, or the object count exceeded a limit.'''
 
 
-class BadPassword(ImportError_):
+class BadPassword(ImportProblem):
     '''The supplied password did not decrypt an encrypted private key.'''
 
 
-class UnusableUpload(ImportError_):
+class UnusableUpload(ImportProblem):
     '''Nothing in the submission could be parsed at all.'''
 
 
@@ -379,14 +378,14 @@ def _load_private_key_pem(block: bytes, label: str, password, bundle, source):
                 _('An encrypted private key in this upload was skipped because no '
                   'password was provided.'))
             return None
-    except ValueError:
+    except ValueError as exc:
         encrypted = (label == 'ENCRYPTED PRIVATE KEY'
                      or b'ENCRYPTED' in block
                      or b'Proc-Type: 4,ENCRYPTED' in block)
         if encrypted and password_bytes:
             raise BadPassword(
                 _('The password did not decrypt the encrypted private key. Check it '
-                  'and try again.'))
+                  'and try again.')) from exc
         if encrypted:
             bundle.add_warning(_(
                 'A private key in this upload could not be read (it is encrypted).'))
@@ -704,11 +703,6 @@ def parse_uploads(uploads, password=None) -> ParsedBundle:
     return parse_sources(sources, password=password)
 
 
-#: Exported under the name the API and tests use. ``ImportError`` is a builtin,
-#: so the class above is deliberately spelled with a trailing underscore.
-ImportError = ImportError_
-
-
 def describe_cert(cert, source: str = '') -> ParsedCert:
     '''
     Describe an already-loaded certificate.
@@ -720,7 +714,7 @@ def describe_cert(cert, source: str = '') -> ParsedCert:
 
 
 __all__ = [
-    'BadPassword', 'ImportError', 'MAX_FILE_BYTES', 'MAX_FILES', 'MAX_OBJECTS',
+    'BadPassword', 'ImportProblem', 'MAX_FILE_BYTES', 'MAX_FILES', 'MAX_OBJECTS',
     'MAX_TOTAL_BYTES', 'ParsedBundle', 'ParsedCert', 'ParsedKey',
     'SUPPORTED_FORMATS', 'UNSUPPORTED_FORMATS', 'UnusableUpload', 'UploadTooLarge',
     'describe_cert', 'parse_sources', 'parse_uploads',

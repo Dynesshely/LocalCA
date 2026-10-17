@@ -14,7 +14,6 @@
 #   * Upgrading from the earlier image, which kept everything under /app? The
 #     mount targets and the required environment changed; see
 #     "Upgrading from an earlier version" in README.md.
-version: "3.8"
 
 # Example Docker Compose configuration for deploying LocalCA behind Traefik3
 # with a path prefix (/localca)
@@ -32,7 +31,7 @@ version: "3.8"
 
 services:
   web:
-    image: practicalsre/local-ca:latest
+    image: ${LOCALCA_IMAGE:?set LOCALCA_IMAGE}:${LOCALCA_TAG:-latest}
     volumes:
       - db:/app/localca_project/db
       - static_volume:/app/localca_project/staticfiles

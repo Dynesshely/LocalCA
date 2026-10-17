@@ -21,7 +21,6 @@ from .models import (
     LeafCertificate,
     RevokedCertificate,
     RootCertificate,
-    VaultCredential,
 )
 
 
@@ -383,7 +382,7 @@ class KeystoreApiTests(ApiTestBase):
         self.assertEqual(self.leaf.key_credential_id, second_id)
         # And it still decrypts, which is the part that would fail if the move
         # copied the ciphertext instead of re-encrypting it.
-        self.assertIn('PRIVATE KEY', private_key_pem(self.leaf, 'leaf', self.owner))
+        self.assertIn('PRIVATE KEY', private_key_pem(self.leaf, 'leaf'))
 
     def test_a_wrong_password_is_a_json_403(self):
         self.login()
@@ -668,7 +667,7 @@ class LeafRenewalApiTests(ApiTestBase):
         # A renewal re-keys: the replacement must not reuse the old private key.
         # The stored form is the wrapped envelope, so it is read back the way the
         # application reads it.
-        key_pem = private_key_pem(replacement, 'leaf', self.owner)
+        key_pem = private_key_pem(replacement, 'leaf')
         self.assertNotEqual(key_pem.strip(),
                             self.leaf.private_key_encrypted.strip())
         self.assertNotIn('PRIVATE KEY', replacement.private_key_wrapped)

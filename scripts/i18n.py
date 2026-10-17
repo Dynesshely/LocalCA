@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import argparse
 import ast
-import re
 import struct
 import sys
 from pathlib import Path
@@ -116,7 +115,7 @@ class Catalog:
                     header = value
                 else:
                     entries[msgid] = value
-            msgid, msgstr, mode = None, None, None
+            msgid, msgstr = None, None
 
         for raw in text.splitlines():
             line = raw.strip()
@@ -254,7 +253,7 @@ def cmd_extract(args):
     return 0
 
 
-def cmd_compile(args):
+def cmd_compile(_args):
     total = 0
     for po in po_paths():
         catalog = Catalog.parse(po.read_text(encoding='utf-8'))
@@ -289,7 +288,7 @@ def coverage():
     return report
 
 
-def cmd_check(args):
+def cmd_check(_args):
     """
     Fail when a translated string is missing.
 
@@ -298,7 +297,6 @@ def cmd_check(args):
     entry that is present but empty counts as missing: it would silently render
     the English text inside a Chinese page.
     """
-    msgids = set(extract_msgids())
     failed = False
     for po, result in coverage().items():
         print(f'{po.relative_to(PROJECT_ROOT)}: '

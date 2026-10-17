@@ -8,8 +8,6 @@ addressed by field name rather than by matching a translated label, and a
 translation cannot silently fall behind the code.
 """
 import importlib.util
-import json
-import re
 from pathlib import Path
 
 from django.conf import settings

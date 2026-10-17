@@ -88,20 +88,15 @@ def credential_of(cert):
     return getattr(cert, 'key_credential', None)
 
 
-def encrypt_for_storage(root_key: bytes, cert, kind: str, pem: str) -> str:
-    '''Produce the stored envelope for a newly generated private key.'''
-    return encrypt_private_key(
-        root_key, kind=kind, cert_id=cert.pk, serial=_serial(cert),
-        private_key_pem=pem)
-
-
 # --------------------------------------------------------------------------
 # credentials
 # --------------------------------------------------------------------------
 
 def credentials_for(user):
     '''This account's credentials, oldest first (the default, in practice).'''
-    return VaultCredential.objects.filter(user=user).order_by('created_at', 'id')
+    return (VaultCredential.objects
+            .filter(user_id=getattr(user, 'pk', user))
+            .order_by('created_at', 'id'))
 
 
 def default_credential(user):
@@ -200,14 +195,17 @@ def credential_key_count(credential: VaultCredential) -> int:
 # one certificate's key
 # --------------------------------------------------------------------------
 
-def private_key_pem(cert, kind: str, user) -> str:
+def private_key_pem(cert, kind: str) -> str:
     '''
     The decrypted private key for a certificate.
 
     An encrypted certificate needs the credential that wraps it to be unlocked.
     Legacy plaintext keys are returned with no keystore involvement, because
-    there is nothing to unwrap. The caller is responsible for having checked that
-    ``user`` may use this key.
+    there is nothing to unwrap.
+
+    Whether the caller may *use* this key is the caller's own check: the credential
+    belongs to the certificate, not to the request, so nothing here could make it.
+    
     '''
     if is_wrapped(cert):
         credential = credential_of(cert)
@@ -234,25 +232,15 @@ def store_wrapped_key(cert, kind: str, pem: str, credential: VaultCredential) ->
     Both happen in one transaction so a failure cannot leave a certificate with
     no readable key at all.
     '''
-    root_key = credential_root_key(credential)
-    wrapped = encrypt_for_storage(root_key, cert, kind, pem)
+    wrapped = encrypt_private_key(
+        credential_root_key(credential), kind=kind, cert_id=cert.pk,
+        serial=_serial(cert), private_key_pem=pem)
     with transaction.atomic():
         cert.private_key_wrapped = wrapped
         cert.private_key_encrypted = ''
         cert.key_credential = credential
         cert.save(update_fields=['private_key_wrapped', 'private_key_encrypted',
                                  'key_credential'])
-
-
-def pending_legacy_keys(user_id: int):
-    '''``(kind, cert)`` for every plaintext key this account still owns.'''
-    pairs = []
-    for kind, model in _kinds():
-        rows = (model.objects
-                .filter(created_by_id=user_id, private_key_wrapped__isnull=True)
-                .exclude(private_key_encrypted=''))
-        pairs.extend((kind, cert) for cert in rows)
-    return pairs
 
 
 def wrap_legacy_keys(user_id: int, credential: VaultCredential):
@@ -265,12 +253,17 @@ def wrap_legacy_keys(user_id: int, credential: VaultCredential):
     action that triggered the sweep, and `manage.py rewrap_keys` retries.
     '''
     wrapped, failures = 0, []
-    for kind, cert in pending_legacy_keys(user_id):
-        try:
-            store_wrapped_key(cert, kind, cert.private_key_encrypted, credential)
-            wrapped += 1
-        except Exception as exc:  # noqa: BLE001 - reported by the caller, never fatal
-            failures.append((kind, cert, exc))
+    for kind, model in _kinds():
+        # Materialised first: wrapping a row removes it from this filter.
+        rows = list(model.objects
+                    .filter(created_by_id=user_id, private_key_wrapped__isnull=True)
+                    .exclude(private_key_encrypted=''))
+        for cert in rows:
+            try:
+                store_wrapped_key(cert, kind, cert.private_key_encrypted, credential)
+                wrapped += 1
+            except Exception as exc:  # noqa: BLE001 - reported, never fatal
+                failures.append((kind, cert, exc))
     return wrapped, failures
 
 
@@ -281,7 +274,7 @@ def move_to_credential(cert, kind: str, target: VaultCredential) -> None:
     Both credentials must be open: the key is decrypted with the current one and
     re-encrypted with the target, so this is a move rather than a copy.
     '''
-    pem = private_key_pem(cert, kind, target.user)
+    pem = private_key_pem(cert, kind)
     store_wrapped_key(cert, kind, pem, target)
 
 
@@ -419,12 +412,12 @@ def vault_status(user_id: int = None) -> dict:
             else:
                 bucket['plaintext'] += 1
         report['by_kind'][kind] = bucket
-        for key in bucket:
-            report[key] += bucket[key]
+        for key, value in bucket.items():
+            report[key] += value
 
     credentials = []
     if user_id is not None:
-        credentials = list(credentials_for_id(user_id))
+        credentials = list(credentials_for(user_id))
     report['credentials'] = len(credentials)
     report['has_root_key'] = bool(credentials)
     report['unsealed'] = any(unsealed.is_unsealed(c.id) for c in credentials)
@@ -433,34 +426,14 @@ def vault_status(user_id: int = None) -> dict:
     return report
 
 
-def credentials_for_id(user_id: int):
-    return VaultCredential.objects.filter(user_id=user_id).order_by('created_at', 'id')
-
-
-def needs_unlock(user_id: int) -> bool:
-    '''Whether a wrapped key exists for this user but its credential is closed.'''
-    return _any_wrapped_for_user(user_id) and not any(
-        unsealed.is_unsealed(c.id) for c in credentials_for_id(user_id))
-
-
-def _any_wrapped_for_user(user_id: int) -> bool:
-    from .models import IntermediateCertificate, LeafCertificate, RootCertificate
-    for model in (RootCertificate, IntermediateCertificate, LeafCertificate):
-        if model.objects.filter(
-                created_by_id=user_id,
-                private_key_wrapped__isnull=False).exists():
-            return True
-    return False
-
-
 __all__ = [
     'KeyUnavailable', 'VaultLocked', 'VaultPasswordError',
     'KIND_LABELS', 'WRAPPED_FIELD', 'CREDENTIAL_FIELD',
     'change_credential_password', 'create_credential', 'credential_key_count',
     'credential_of', 'credential_root_key', 'credentials_for', 'default_credential',
-    'encrypt_for_storage', 'get_credential', 'has_private_key', 'is_legacy_plaintext',
+    'get_credential', 'has_private_key', 'is_legacy_plaintext',
     'is_wrapped', 'issuers_with_key', 'key_status', 'keystore_report',
-    'lock_credential', 'move_to_credential', 'needs_unlock', 'pending_legacy_keys',
+    'lock_credential', 'move_to_credential',
     'private_key_pem', 'set_default_credential', 'store_wrapped_key',
     'unlock_credential', 'vault_status', 'wrap_legacy_keys',
 ]

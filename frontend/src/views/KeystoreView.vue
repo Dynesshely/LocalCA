@@ -1,12 +1,10 @@
 <script setup>
 /**
- * The keystore page: one place to see every private key's state and to manage
- * the named credentials that encrypt them.
+ * Every private key's state, and the named credentials that encrypt them.
  *
- * The page owns no cryptography. It shows what `/api/keystore/` reports -- which
- * credential wraps which key, and whether that credential is currently open --
- * and every action goes through the store, which reloads the inventory so the
- * view can never show a state the server disagrees with.
+ * No cryptography happens here: the page renders what `/api/keystore/` reports and
+ * sends every action through the store, which reloads the inventory afterwards so
+ * the view cannot show a state the server disagrees with.
  */
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'

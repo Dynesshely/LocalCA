@@ -1,11 +1,5 @@
-/**
- * Thin fetch wrapper for the LocalCA API.
- *
- * Authentication is Django's session cookie plus a CSRF token. The cookie is
- * planted by the SPA shell on load; every state-changing request echoes it back
- * in the X-CSRFToken header, which is what Django's CSRF middleware expects for
- * same-origin fetch calls.
- */
+// Authentication is Django's session cookie plus a CSRF token: the shell plants
+// the cookie, and every state-changing request echoes it in X-CSRFToken.
 
 import { acceptLanguage, i18n } from '@/i18n'
 
@@ -16,7 +10,7 @@ function readCookie(name) {
   return match ? decodeURIComponent(match[2]) : null
 }
 
-/** Raised for any non-2xx API response, carrying the parsed payload. */
+/** A non-2xx API response, with the payload kept for the caller. */
 export class ApiError extends Error {
   constructor(message, { status, payload } = {}) {
     super(message)

@@ -26,7 +26,7 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 from django.shortcuts import get_object_or_404
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django.views.decorators.http import require_GET, require_POST
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import (
@@ -46,7 +46,6 @@ from .forms import (
     RootCertificateForm,
 )
 from .keys import (
-    KIND_LABELS,
     KeyUnavailable,
     change_credential_password,
     create_credential,
@@ -56,7 +55,6 @@ from .keys import (
     credentials_for,
     default_credential,
     get_credential,
-    is_legacy_plaintext,
     is_wrapped,
     issuers_with_key,
     key_status,
@@ -401,12 +399,6 @@ def _key_to_dict(cert, kind, credential=None):
     }
 
 
-def _cert_kinds():
-    return (('root', RootCertificate),
-            ('intermediate', IntermediateCertificate),
-            ('leaf', LeafCertificate))
-
-
 def _vault_payload(request):
     '''Read a vault password from either JSON or form encoding.'''
     data = _payload(request)
@@ -643,7 +635,7 @@ def api_keystore_assign(request):
         return error
 
     kind = str(data.get('kind') or '')
-    model = dict(_cert_kinds()).get(kind)
+    model = CERTIFICATE_KINDS.get(kind)
     if model is None:
         return _error(_('Unknown certificate kind.'), status=404)
     cert = model.objects.filter(pk=data.get('id'), created_by=request.user).first()
@@ -845,7 +837,7 @@ def api_create_certificate(request, cert_type):
             name = form.cleaned_data['common_name']
             root = form.cleaned_data['root_id']
             try:
-                issuer_key = private_key_pem(root, 'root', request.user)
+                issuer_key = private_key_pem(root, 'root')
             except KeyUnavailable as exc:
                 return _error(str(exc), status=409)
             except VaultLocked as exc:
@@ -876,7 +868,7 @@ def api_create_certificate(request, cert_type):
             intermediate = form.cleaned_data['intermediate_id']
             sans = form.san_list()
             try:
-                issuer_key = private_key_pem(intermediate, 'intermediate', request.user)
+                issuer_key = private_key_pem(intermediate, 'intermediate')
             except KeyUnavailable as exc:
                 return _error(str(exc), status=409)
             except VaultLocked as exc:
@@ -983,7 +975,7 @@ def api_renew_leaf_certificate(request, cert_id):
     # Signing consumes the intermediate's key, so *its* credential has to be open
     # -- which is not necessarily the one the new key will be stored under.
     try:
-        issuer_key = private_key_pem(intermediate, 'intermediate', request.user)
+        issuer_key = private_key_pem(intermediate, 'intermediate')
     except KeyUnavailable as exc:
         return _error(str(exc), status=409)
     except VaultLocked as exc:
@@ -1405,7 +1397,7 @@ def _download_private(request, cert, spec):
         password = None
 
     try:
-        key_pem = private_key_pem(cert, kind, request.user)
+        key_pem = private_key_pem(cert, kind)
     except VaultLocked as exc:
         return _vault_locked(
             _('The keystore credential "%(name)s" is locked. Open it to export '
@@ -1472,11 +1464,10 @@ def _download_private(request, cert, spec):
     return _file_response(buffer.getvalue(), f'{name}-pair.zip', 'application/zip')
 
 
-# NOTE: the unprotected formats above exist because the operator asked for them
-# and because the alternative is `openssl pkcs12 -nodes` on a laptop, which is
-# strictly worse: no authentication, no ownership check, no audit entry. What is
-# deliberately still absent is any *unauthenticated* path to a private key, and
-# any that writes one to disk without being asked for it in so many words.
+# Unprotected exports exist because the alternative is `openssl pkcs12 -nodes`
+# on somebody's laptop: no authentication, no ownership check, no audit entry.
+# What stays absent is any unauthenticated path to a key, and any export that
+# does not ask first.
 
 
 # --------------------------------------------------------------------------
@@ -1508,9 +1499,7 @@ def api_not_found(_request, **_ignored):
     mistyped or removed endpoint look successful to an API client. Kept free of
     authentication so it cannot be used to probe for existing routes.
     """
-    from django.http import JsonResponse as _JsonResponse
-
-    return _JsonResponse(
+    return JsonResponse(
         {'ok': False, 'errors': ['No such API endpoint.']}, status=404)
 
 
@@ -1554,7 +1543,7 @@ def api_import_certificates(request):
 
     try:
         bundle = importers.parse_uploads(uploads, password=password)
-    except importers.ImportError as exc:
+    except importers.ImportProblem as exc:
         return _error(str(exc))
 
     plan = import_service.plan_import(bundle, request.user, overrides=overrides)

@@ -1,11 +1,8 @@
 <script setup>
 /**
- * The download menu: every format the server offers, for one certificate.
- *
- * The list comes from `/api/meta/`, so the menu cannot offer a format the
- * server does not serve. Formats are grouped by what they give away — the
- * certificate, or the private key — because that is the distinction an operator
- * actually cares about, and the second group is where the warnings live.
+ * Every format the server offers for one certificate, grouped by what it gives
+ * away — the certificate, or the private key. The list comes from `/api/meta/`,
+ * so the menu cannot offer a format the server does not serve.
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'

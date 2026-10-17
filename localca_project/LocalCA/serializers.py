@@ -36,8 +36,8 @@ def certificate_common(cert, kind, user):
     Fields shared by every certificate kind, plus the per-user rights the UI
     needs to decide which actions to offer.
 
-    ``can_manage`` mirrors :func:`LocalCA.views.can_manage_certificate`:
-    owners manage their own certificates, staff manage any.
+    ``can_manage`` mirrors :func:`LocalCA.api.can_manage_certificate`: owners
+    manage their own certificates, staff manage any.
     """
     is_owner = (user.is_authenticated
                 and cert.created_by_id is not None

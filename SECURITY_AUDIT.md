@@ -351,6 +351,9 @@ CR/LF 注入被 Django 拦截（不会产生响应拆分），但这不是应用
    还使用了已过时的 `actions/setup-python@v3`。
 5. **部署配置不一致可能静默削弱防护**：`docker-compose-from-registry-arm.yml` 缺少
    `CSRF_TRUSTED_ORIGINS`（其余 compose 都有，README 也要求手动添加）。
+   *后续：这两个「从 Docker Hub 拉上游镜像」的 compose 已删除——它们拉的不是本仓库发布的
+   镜像，且用内联 command 绕过了 `start.sh` 的属主预检；`docker-compose-harbor.yml` 覆盖同一
+   场景，镜像坐标由环境变量给出。*
    另外 `docker-compose.yml:8` 与声明卷 `db:` 并存，容器实际写入**宿主机目录 `./db`**
    而非具名卷，导致「以为数据在卷里、实际在源码树里」的备份与权限误判。
 6. **README 引导用户从未固定的远程分支取配置并直接运行**：
@@ -780,7 +783,7 @@ KEK  ──AES-256-GCM───────────► 每用户根密钥（
 | 格式矩阵 | `tests_import.ImporterFormatTests`（28 项，`cryptography` 现造夹具，不依赖 openssl） | PEM/DER/PKCS7/PKCS12/ZIP、加密 PKCS#8、传统 OpenSSL 加密 PEM、`TRUSTED CERTIFICATE`（含尾部信任数据）、CSR/SSH 忽略、垃圾拒绝、四类上限、去重 全部通过 |
 | 规划与执行 | `ImportPlanTests` / `ImportApplyTests` | 层级重建、挂到已存根、父级缺失、根直签叶、自签终端证书、已存在跳过、补钥匙、序列号冲突、重名改名、他人 CA 越权、staff 例外、覆盖项、逐条失败隔离 |
 | API | `ImportApiTests` | 401 / dry run 不写库 / 未解锁 409 / 落库并出现在证书树 / 密钥为封装密文且旧明文字段为空 / 无密钥证书 `has_key=false` 且不出现在签发菜单 / staff 可见 / 非法 overrides 400 / 未知格式 400 / 审计落账 / meta 暴露格式 |
-| 真实调用链（实测） | 对 `:18001` 的 SPA API 用 dev 账号走完整流程 | 登录 → `/api/vault/status/`（wrapped=3, unsealed=false）→ 无密钥链 dry run（create×2，父级正确）→ commit（root+intermediate 落库）→ 证书树出现且 `has_key=false` → `/api/issuers/` 只剩原有带密钥 CA（无密钥的两个被排除）→ 带密钥 PKCS12 dry run 显示 `attach_key` 与 `requires_vault_unlock=true` → 未解锁提交返回 **409 vault_locked** |
+| 真实调用链（实测） | 对 `:18001` 的 SPA API 用 dev 账号走完整流程 | 登录 → `/api/keystore/`（wrapped=3，凭证未解锁）→ 无密钥链 dry run（create×2，父级正确）→ commit（root+intermediate 落库）→ 证书树出现且 `has_key=false` → `/api/issuers/` 只剩原有带密钥 CA（无密钥的两个被排除）→ 带密钥 PKCS12 dry run 显示 `attach_key` 与 `requires_vault_unlock=true` → 未解锁提交返回 **409 vault_locked** |
 | 测试总量 | `DJANGO_TESTING=true manage.py test LocalCA` | **180 passed**（原 113 + 新增 67） |
 | lint | `pylint LocalCA/importers.py LocalCA/import_service.py` | 9.72/10（与仓库基线 9.3 相比不劣化；`tests_import.py` 9.11 高于既有测试文件 8.39） |
 

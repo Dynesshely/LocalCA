@@ -1,11 +1,5 @@
-/**
- * Locale handling for the SPA.
- *
- * The catalogs live one namespace per file under `messages/<locale>/`, and the
- * file's name becomes the namespace, so `messages/en/leaf.json` provides
- * `leaf.*` and adding a namespace means adding a file — no index to edit, and
- * no risk of two features fighting over one JSON file.
- */
+// One JSON file per namespace under messages/<locale>/, merged on load, so
+// adding a namespace never means editing an index.
 import { createI18n } from 'vue-i18n'
 
 /** Locales the interface is translated into. `en` is the source language. */
@@ -22,14 +16,9 @@ function isSupported(code) {
   return SUPPORTED_LOCALES.some((locale) => locale.code === code)
 }
 
-/**
- * The locale to start in: the visitor's last explicit choice, otherwise the
- * browser's preference, otherwise English.
- *
- * Deliberately not a server setting. The choice is about the person reading the
- * page, not about the deployment, and it has to be available before the first
- * paint to avoid a flash of the wrong language.
- */
+// Stored choice, then the browser's preference, then English. Not a server
+// setting: it is about the reader, not the deployment, and it is read before
+// first paint so the page never flashes the wrong language.
 export function detectLocale() {
   try {
     const stored = localStorage.getItem(STORAGE_KEY)

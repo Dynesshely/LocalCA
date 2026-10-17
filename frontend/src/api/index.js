@@ -1,7 +1,4 @@
-/**
- * Typed-ish wrappers around the LocalCA API. Keeping the paths in one module
- * means components never build URLs by hand.
- */
+// Every endpoint path lives here, so components never build URLs by hand.
 import { download, request } from './client'
 
 export const session = {
@@ -17,13 +14,8 @@ export const meta = {
   get: () => request('/api/meta/'),
 }
 
-/**
- * The keystore: named credentials, each a password wrapping one root key.
- *
- * A private key names the credential that wraps it, so "which password?" has an
- * answer that is not "the account's". Passwords are sent once per unlock and are
- * never stored by the client.
- */
+// A credential is a name plus a password wrapping one root key; a private key
+// names its own, so "which password?" has an answer that is not "the account's".
 export const keystore = {
   get: () => request('/api/keystore/'),
   create: (name, vaultPassword, { encryptExisting = true } = {}) =>

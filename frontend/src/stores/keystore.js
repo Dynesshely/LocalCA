@@ -3,18 +3,11 @@ import { defineStore } from 'pinia'
 import { keystore as keystoreApi } from '@/api'
 import { ApiError } from '@/api/client'
 
-/**
- * Keystore state: the account's credentials, and the keys they wrap.
- *
- * A *credential* is a name plus a password wrapping one root key. An account can
- * hold several, each is opened on its own with its own password, and every stored
- * private key names the one that wraps it -- so this store is a list, not a
- * single boolean, and every operation is about one credential.
- *
- * Passwords are never stored here. The server keeps each opened root key in its
- * own memory for an idle timeout, so "unlocked" is a server-side fact this store
- * mirrors; reloading the page re-reads it rather than restoring anything.
- */
+// The account's credentials and the keys they wrap. One credential per password,
+// so every operation here is about *one* of them, not about "the vault".
+//
+// No password is ever held client-side: "unlocked" is a server-side fact this
+// store mirrors, and a page load re-reads it rather than restoring anything.
 export const useKeystoreStore = defineStore('keystore', () => {
   const credentials = ref([])
   const keys = ref([])
@@ -26,14 +19,9 @@ export const useKeystoreStore = defineStore('keystore', () => {
   const error = ref('')
 
   /**
-   * A pending "open this credential so the action can continue" request.
-   *
-   * Any operation that needs a private key can hit a locked credential, and the
-   * answer is always the same: ask for that credential's password, then do the
-   * thing. Keeping the request here means one dialog in the shell serves every
-   * caller, instead of each page carrying its own open/retry bookkeeping.
-   *
-   * `{ reason, credentialId, retry }` while waiting, `null` otherwise.
+   * "Open this credential, then continue" — `{ reason, credentialId, retry }`
+   * while a dialog is waiting, `null` otherwise. One dialog in the shell serves
+   * every caller, so no page carries its own open/retry bookkeeping.
    */
   const unlockRequest = ref(null)
 

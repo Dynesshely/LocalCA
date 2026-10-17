@@ -42,11 +42,7 @@
     },
     "language": {
       "label": "语言",
-      "switched": "界面语言已切换为{language}",
-      "name": {
-        "en": "English",
-        "zh": "简体中文"
-      }
+      "switched": "界面语言已切换为{language}"
     },
     "state": {
       "loading": "加载中……",

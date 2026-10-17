@@ -8,22 +8,18 @@ from django.utils.translation import gettext_lazy as _
 
 
 class RootCertificate(models.Model):
-    """
-    This class represents the root certificate.
-    """
     created_by = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
         related_name='root_certificates',
         null=True)
     name = models.CharField(max_length=255, unique=True)
-    serial_number = models.CharField(
-        max_length=255, unique=True)  # Unique serial number
+    serial_number = models.CharField(max_length=255, unique=True)
     public_key = models.TextField()
-    private_key_encrypted = models.TextField()  # Encrypted private key
-    # Vault-wrapped private key (see LocalCA/vault.py). Null means the
-    # key has not been migrated yet and is still stored in the legacy
-    # column above; readers must check this field first.
+    private_key_encrypted = models.TextField()
+    # The wrapped key (see vault.py). Null means this row predates the keystore
+    # and still carries its key in the legacy plaintext column above; readers must
+    # check this field first.
     private_key_wrapped = models.TextField(null=True, blank=True)
     # Which keystore credential (name + password) wraps that ciphertext. Null
     # alongside a wrapped key means the owner is gone and nothing can unwrap it.
@@ -42,22 +38,18 @@ class RootCertificate(models.Model):
 
 
 class IntermediateCertificate(models.Model):
-    """
-    This class represents the intermediate certificate.
-    """
     created_by = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
         related_name='intermediate_certificates',
         null=True)
     name = models.CharField(max_length=255, unique=True)
-    serial_number = models.CharField(
-        max_length=255, unique=True)  # Unique serial number
+    serial_number = models.CharField(max_length=255, unique=True)
     public_key = models.TextField()
-    private_key_encrypted = models.TextField()  # Encrypted private key
-    # Vault-wrapped private key (see LocalCA/vault.py). Null means the
-    # key has not been migrated yet and is still stored in the legacy
-    # column above; readers must check this field first.
+    private_key_encrypted = models.TextField()
+    # The wrapped key (see vault.py). Null means this row predates the keystore
+    # and still carries its key in the legacy plaintext column above; readers must
+    # check this field first.
     private_key_wrapped = models.TextField(null=True, blank=True)
     # Which keystore credential (name + password) wraps that ciphertext. Null
     # alongside a wrapped key means the owner is gone and nothing can unwrap it.
@@ -87,15 +79,14 @@ class LeafCertificate(models.Model):
         related_name='leaf_certificates',
         null=True)
     common_name = models.CharField(max_length=255)
-    san = models.TextField()  # Comma-separated SANs
+    san = models.TextField()
     valid_until = models.DateTimeField()
-    serial_number = models.CharField(
-        max_length=255, unique=True)  # Unique serial number
+    serial_number = models.CharField(max_length=255, unique=True)
     public_key = models.TextField()
-    private_key_encrypted = models.TextField()  # Encrypted private key
-    # Vault-wrapped private key (see LocalCA/vault.py). Null means the
-    # key has not been migrated yet and is still stored in the legacy
-    # column above; readers must check this field first.
+    private_key_encrypted = models.TextField()
+    # The wrapped key (see vault.py). Null means this row predates the keystore
+    # and still carries its key in the legacy plaintext column above; readers must
+    # check this field first.
     private_key_wrapped = models.TextField(null=True, blank=True)
     # Which keystore credential (name + password) wraps that ciphertext. Null
     # alongside a wrapped key means the owner is gone and nothing can unwrap it.
@@ -276,4 +267,3 @@ class VaultCredential(models.Model):
 
     def __str__(self):
         return f"VaultCredential(user={self.user_id}, name={self.name!r})"
-

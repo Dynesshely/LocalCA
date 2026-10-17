@@ -782,7 +782,7 @@ class ImportApiTests(ImportTestBase):
         from .keys import private_key_pem
         from .vault import VaultError
         with self.assertRaises(VaultError):
-            private_key_pem(other, 'root', self.user)
+            private_key_pem(other, 'root')
 
 
 # --------------------------------------------------------------------------
@@ -798,7 +798,7 @@ class ImportedIssuerTests(ImportTestBase):
         ca = CertificateAuthority()
         root = RootCertificate.objects.get(name='Import Root CA')
         from .keys import private_key_pem
-        issuer_key = private_key_pem(root, 'root', self.user)
+        issuer_key = private_key_pem(root, 'root')
         data = ca.create_intermediate_certificate('Signed By Imported Root', 365,
                                                   root.public_key, issuer_key)
         self.assertTrue(data['public_key'])

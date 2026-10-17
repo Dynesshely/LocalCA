@@ -1,8 +1,8 @@
 # Local CA
 Local CA - Your Own Internal Certificate Authority!
 
-[![Pylint Tests](https://github.com/tgangte/LocalCA/actions/workflows/pylint.yml/badge.svg)](https://github.com/tgangte/LocalCA/actions/workflows/pylint.yml)
-[![Django CI](https://github.com/tgangte/LocalCA/actions/workflows/django.yml/badge.svg?branch=main)](https://github.com/tgangte/LocalCA/actions/workflows/django.yml)
+[![Pylint Tests](https://github.com/Dynesshely/LocalCA/actions/workflows/pylint.yml/badge.svg)](https://github.com/Dynesshely/LocalCA/actions/workflows/pylint.yml)
+[![Django CI](https://github.com/Dynesshely/LocalCA/actions/workflows/django.yml/badge.svg?branch=main)](https://github.com/Dynesshely/LocalCA/actions/workflows/django.yml)
 
 ## Welcome to Local CA!
 
@@ -54,35 +54,43 @@ Light and dark themes, following the operating system by default
 <img src="screenshots/hierarchy-zh.png" alt="The certificate hierarchy in Simplified Chinese, with the language switch in the top bar" width="80%">
 English or Simplified Chinese — including the messages the server sends back
 
-## Quick Start - Deploy with pre-built docker image from docker hub
+## Quick Start
 
-Run the following two commands on any directory on your linux terminal to get Local CA up and running quickly.  (Note that you need to have [docker preinstalled](https://docs.docker.com/engine/install/) in your system). Do not expose this web app to the internet, it is for local use only.
+LocalCA is two containers: the application (Django + the built SPA, listening on
+8000) and nginx, which serves the static files and proxies everything else. You
+need [docker](https://docs.docker.com/engine/install/) with the compose plugin.
+**Do not expose this on the internet** — it issues certificates for a private
+network.
 
+```bash
+git clone https://github.com/Dynesshely/LocalCA.git
+cd LocalCA
+
+# The database directory is a bind mount, so create it and hand it to the uid the
+# container runs as (see "3. The container no longer runs as root" if you hit
+# "unable to open database file" instead).
+mkdir -p db && sudo chown -R 10001:10001 db
+
+# The one required setting: a secret key of your own.
+export DJANGO_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
+
+docker compose up --build -d
 ```
-wget https://raw.githubusercontent.com/tgangte/LocalCA/refs/heads/main/docker-compose-from-registry.yml
-docker compose -f docker-compose-from-registry.yml up
-```
-Note that if you are using a domain name or IP address to access, you need to add that in the CSRF section of docker-compose-from-registry.yml 
 
-Visit the host's IP address or localhost IP [127.0.0.1](http://127.0.0.1/) on your browser. There is **no default password**: on the first start the container creates a superuser named `admin` and prints a randomly generated password once in the log (`docker compose logs web`). Set `DJANGO_SUPERUSER_PASSWORD` before the first start to choose your own. Change it in the UI after signing in.
+Then open `http://<host>/`. There is **no default password**: on first start the
+container creates a superuser named `admin` and prints a randomly generated
+password once in the log (`docker compose logs web`). Set
+`DJANGO_SUPERUSER_PASSWORD` before that first start to choose your own, and change
+it in the UI after signing in.
 
-Alternatively, if you are on ARM architecture such as the Raspberry Pi or Apple Silicon (M1,M2,M3,M4 Mac etc) the you can use the  arm based docker files:
-```
-wget https://raw.githubusercontent.com/tgangte/LocalCA/refs/heads/main/docker-compose-from-registry-arm.yml
-docker compose -f docker-compose-from-registry-arm.yml up
+`docker compose down` stops it; the database and static files live in named
+volumes, so `down` keeps your data and `down -v` does not.
 
-```
-This is the docker hub repository https://hub.docker.com/r/practicalsre/local-ca/tags 
-
-The following commands can be used to manage the services:
-
-```
-# To start the services in the background, -d runs it in detached (background) mode, so it frees up the terminal.
-docker compose -f docker-compose-from-registry.yml  up -d
-
-# To stop the services
-docker compose -f docker-compose-from-registry.yml  down
-```
+To run a *published* image instead of building, use `docker-compose-harbor.yml`
+with `LOCALCA_IMAGE` and `LOCALCA_TAG` (see [Configuration](#configuration)), and
+[scripts/image-push.sh](scripts/image-push.sh) to publish one to a registry of
+your own — it reads the registry coordinates from the environment, never from the
+repository.
 
 ### Deploy Behind Reverse Proxy (Traefik, Nginx, etc.)
 
@@ -114,48 +122,44 @@ Common timezone examples:
 
 For a complete list of valid timezone names, see the [IANA Time Zone Database](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones).
 
-### Local build and deploy with docker(only for developers)
+### Building and publishing images
 
-```
-# Clone this repo
-git clone https://github.com/tgangte/LocalCA.git
-
-# cd into  the directory that contains the docker-compose.yml file
-cd LocalCA
-
-# Run the docker compose build command, this will build and bring 'up' the app.
-sudo docker compose up --build
-
-# Once build is satisfactory, run these to push to docker hub
-docker build -t practicalsre/local-ca:latest .
-docker push practicalsre/local-ca
-
-# Build steps for nginx for arm image
-docker build -t practicalsre/local-ca-nginx:arm-latest -f Dockerfile.nginx .
-docker push practicalsre/local-ca-nginx:arm-latest   
-```
-
-The compose file reads its settings from `.env`, and the application image runs
-unprivileged, so do this once before `docker compose up --build`:
+`docker compose up --build` builds both images locally. To publish them to a
+registry of your own, [scripts/image-push.sh](scripts/image-push.sh) tags and
+pushes the application image, retrying the large layers (a registry proxy in front
+can time out on them):
 
 ```bash
-cp .env.example .env        # fill in DJANGO_SECRET_KEY and DJANGO_ALLOWED_HOSTS
-mkdir -p db                 # the database bind mount
-printf 'APP_UID=%s\nAPP_GID=%s\n' "$(id -u)" "$(id -g)" >> .env
-# ...or leave APP_UID alone and run: sudo chown 10001:10001 db
+export HARBOR_HOST=registry.example.net
+export HARBOR_PROJECT=myproject
+./scripts/image-push.sh 2.1.0        # or: ./scripts/image-push.sh
 ```
 
-Either way the point is the same: `db` must end up writable by the uid the
-container runs as. If the first start dies with `unable to open database file`,
-that ownership is what is wrong — see
-[3. The container no longer runs as root](#3-the-container-no-longer-runs-as-root).
+The tag defaults to the version in `frontend/package.json`. The 8000-port image
+does not serve static files, so a deployment also needs nginx — either
+`nginx:alpine` with [nginx.conf](nginx.conf), or the small
+[Dockerfile.nginx](Dockerfile.nginx) image built from it. Never commit the
+registry coordinates: put them in `scripts/harbor.env`, which is gitignored.
+
+The application image runs unprivileged (`APP_UID`/`APP_GID`, default 10001). If
+your bind-mounted `db` is owned by another account, either `chown` it or build
+with `--build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)`.
 
 ### Security
 
-The web login page and passwords are protected by django-admin and hashed respectively. I recommend creating and deploying HTTPS certs for the LocalCA nginx webserver itself. 
-The public and private keys are stored in the unencrypted db.sqlite3 database file, so access to this file must be restricted and the host hardened. 
+Logins and passwords are Django's own (hashed, session-cookie authenticated),
+and every certificate action is written to the audit log.
 
-Since the private keys are not encrypted, I only recommend hosting this internally, not on production or exposed to internet. 
+**Private keys are encrypted at rest.** Each one is wrapped with a keystore
+credential — a named password, checked against a scrypt-derived key — so a copy of
+`db.sqlite3` or of a volume snapshot does not yield a usable key, and there is no
+unauthenticated path to one. What that does *not* protect against is somebody who
+controls the running server: an operator who can unlock a credential can use its
+keys, by design.
+
+So keep it where a private CA belongs: on your own network, with the host
+hardened, `db.sqlite3` readable only by the service account, and the UI reached
+over HTTPS (put a TLS-terminating proxy in front, or use `DJANGO_SECURE_COOKIES`). 
 
 #### Required configuration
 
@@ -326,8 +330,9 @@ docker initialises from the image and therefore already owns.
 
 Migrations `0002` (revocation targets and comment), `0003` (private key
 encryption) and `0004` (keystore credentials) apply in place on the existing
-database. This is verified end to end: accounts and their
-password hashes, roots/intermediates/leaves with their SANs, revocations —
+database, and `0005` only adds a nullable column for renewal links. The upgrade
+was verified end to end against a database from the previous version: accounts and
+their password hashes, roots/intermediates/leaves with their SANs, revocations —
 including pre-RFC 5280 free-text reasons — and the audit log all survive, and you
 sign in with your existing password.
 
@@ -493,8 +498,8 @@ and compression ratio.
 
 An imported private key is as sensitive as one LocalCA generated. If the CA you
 import is already trusted by your clients, then anyone who can sign with it can
-impersonate those services — and private keys still leave this application only
-as a password-protected PKCS#12 bundle.
+impersonate those services — and private keys leave this application under the
+guards described in [Downloading certificates and keys](#downloading-certificates-and-keys).
 
 ## Architecture
 
@@ -503,17 +508,25 @@ LocalCA is split into a JSON API and a single-page frontend:
 ```
 localca_project/          Django: JSON API, ORM, auth, certificate operations
   LocalCA/
-    api.py                API endpoints (session/CSRF auth, JSON in/out)
+    api_urls.py           The API's URL map
+    api.py                Endpoints: session/CSRF auth, JSON in and out
     serializers.py        Certificate -> JSON, including per-user rights
-    ca.py                 Certificate generation (cryptography, no openssl shell-out)
+    ca.py                 Certificate generation (cryptography; never shells out to openssl)
     forms.py              Server-side validation for every certificate input
-    models.py             Roots, intermediates, leaves, revocations, audit log
+    models.py             Roots, intermediates, leaves, revocations, credentials, audit log
+    keys.py               Which key lives under which credential, and how to use it
+    vault.py              The envelope format: scrypt KEK, root key, HKDF per key
+    importers.py          Parsing uploaded bundles (content, not filenames)
+    import_service.py     Planning and applying an import
+    throttle.py           Login attempt limits
 frontend/                 Vue 3 SPA (Vite + Tailwind CSS 4)
   src/
-    api/                  Typed API client, CSRF handling, downloads
-    stores/               Pinia: session, certificates, feedback messages
+    api/                  Endpoint wrappers, CSRF, error shape, downloads
+    stores/               Pinia: session, certificates, keystore, toasts
     views/                One component per page
     components/           Shell, certificate tree, dialogs, form controls
+    composables/          Shared behaviour (the download flow)
+    i18n/                 Catalogs and locale handling, one file per namespace
 ```
 
 Django renders no application pages. It authenticates (session cookie plus CSRF
@@ -525,7 +538,7 @@ path so client-side deep links such as `/create/leaf` work.
 Backend:
 
 ```bash
-git clone https://github.com/tgangte/LocalCA.git
+git clone https://github.com/Dynesshely/LocalCA.git
 cd LocalCA
 python3 -m venv venv
 source venv/bin/activate

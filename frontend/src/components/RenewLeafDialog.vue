@@ -1,18 +1,14 @@
 <script setup>
 /**
- * Renewing a leaf certificate: edit the SAN list, get a new certificate.
+ * Renew a leaf: edit the names it answers to, get a new certificate.
  *
- * The dialog is deliberately narrow about what it lets you change. The common
- * name and the signing intermediate are inherited from the certificate being
- * replaced -- changing either of those is issuing a *different* certificate, which
- * is what Create Leaf is for. What an operator actually needs to fix on a live
- * service is the set of names it answers to, so that is what is editable here.
+ * Only the SAN list (and the validity) are editable. The common name and the
+ * signing intermediate are inherited — changing either is issuing a *different*
+ * certificate, which is what Create Leaf is for.
  *
- * It is self-contained: the hosts (the leaf table and the hierarchy cards) only
- * say which certificate and reload when told. A locked signing credential is not
- * an error state to render but the usual "open it, then continue" flow, so the
- * request is retried through the keystore store exactly like a private-key
- * download.
+ * Self-contained: a host only says which certificate. A locked signing credential
+ * goes through the usual open-then-retry flow rather than being rendered as an
+ * error.
  */
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'

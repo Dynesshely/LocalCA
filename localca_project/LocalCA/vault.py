@@ -127,13 +127,13 @@ def _load(blob: str) -> dict:
         raise VaultFormatError('Stored ciphertext has an unexpected shape.')
     if envelope.get('v') != ENVELOPE_VERSION:
         raise VaultFormatError(
-            'Unsupported vault envelope version: %r' % envelope.get('v'))
+            f'Unsupported vault envelope version: {envelope.get("v")!r}')
     # Only the fields every envelope has. 'salt' belongs to the password-derived
     # (root key) envelope alone: per-key envelopes use HKDF from the root key, so
     # they deliberately carry no salt.
     for field in ('kdf', 'nonce', 'ct'):
         if field not in envelope:
-            raise VaultFormatError('Vault envelope is missing %r.' % field)
+            raise VaultFormatError(f'Vault envelope is missing {field!r}.')
     return envelope
 
 
@@ -229,7 +229,7 @@ def _aad(kind: str, cert_id: int, serial: str) -> bytes:
     into row B makes decryption fail. Without it, a swapped ciphertext would
     quietly decrypt to the wrong private key.
     '''
-    return ('localca-vault-key-v1|%s|%s|%s' % (kind, cert_id, serial)).encode('utf-8')
+    return f'localca-vault-key-v1|{kind}|{cert_id}|{serial}'.encode('utf-8')
 
 
 def _derive_key_for(root_key: bytes, kind: str, cert_id: int, serial: str) -> bytes:
@@ -323,9 +323,10 @@ class UnsealedKeys:
         self._last_used = {}
 
     def _expire(self, credential_id: int) -> None:
-        timeout = idle_timeout()
         last = self._last_used.get(credential_id)
-        if last is not None and timeout >= 0 and (time.time() - last) > timeout:
+        if last is None:
+            return
+        if idle_timeout() >= 0 and time.time() - last > idle_timeout():
             self.lock(credential_id)
 
     def unseal(self, credential_id: int, password: str, root_key: bytes) -> None:

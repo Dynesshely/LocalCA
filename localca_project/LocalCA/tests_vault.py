@@ -9,7 +9,6 @@ import json
 
 from django.contrib.auth.models import User
 from django.test import TestCase
-from django.urls import reverse
 
 from .ca import CertificateAuthority
 from .keys import (
@@ -24,7 +23,6 @@ from .keys import (
 )
 from .models import RootCertificate, VaultCredential
 from .vault import (
-    PLAINTEXT_MAGIC,
     VaultFormatError,
     VaultLocked,
     VaultPasswordError,
@@ -204,14 +202,14 @@ class VaultModelTests(TestCase):
         store_wrapped_key(self.root, 'root', self.pem, self.credential)
         self.root.refresh_from_db()
         self.assertEqual(
-            private_key_pem(self.root, 'root', self.owner).strip(), self.pem.strip())
+            private_key_pem(self.root, 'root').strip(), self.pem.strip())
 
     def test_signature_of_the_private_key_is_preserved(self):
         '''The decrypted key must be usable for real signing.'''
         from cryptography.hazmat.primitives import serialization
         store_wrapped_key(self.root, 'root', self.pem, self.credential)
         self.root.refresh_from_db()
-        recovered = private_key_pem(self.root, 'root', self.owner)
+        recovered = private_key_pem(self.root, 'root')
         loaded = serialization.load_pem_private_key(recovered.encode(), password=None)
         self.assertEqual(loaded.key_size, 2048)
 
@@ -220,7 +218,7 @@ class VaultModelTests(TestCase):
         self.root.refresh_from_db()
         unsealed.lock(self.owner.id)
         with self.assertRaises(VaultLocked):
-            private_key_pem(self.root, 'root', self.owner)
+            private_key_pem(self.root, 'root')
 
     def test_legacy_plaintext_key_is_still_usable_and_flagged(self):
         '''Keys created before the vault must keep working, and be reported.'''
@@ -231,7 +229,7 @@ class VaultModelTests(TestCase):
         unsealed.lock(self.owner.id)
         # No vault needed: there is nothing to unwrap.
         self.assertEqual(
-            private_key_pem(self.root, 'root', self.owner).strip(), self.pem.strip())
+            private_key_pem(self.root, 'root').strip(), self.pem.strip())
 
     def test_changing_the_vault_password_keeps_keys_readable(self):
         store_wrapped_key(self.root, 'root', self.pem, self.credential)
@@ -245,7 +243,7 @@ class VaultModelTests(TestCase):
         unsealed.lock_all()
         unlock_credential(self.credential, new_password)
         self.assertEqual(
-            private_key_pem(self.root, 'root', self.owner).strip(), self.pem.strip())
+            private_key_pem(self.root, 'root').strip(), self.pem.strip())
         self.assertEqual(self.root.private_key_wrapped, blob_before)
 
     def test_old_password_stops_working_after_a_change(self):
@@ -337,7 +335,7 @@ class RewrapCommandTests(TestCase):
         self.assertFalse(self.root.private_key_encrypted)
         # And the key survives the migration intact.
         self.assertEqual(
-            private_key_pem(self.root, 'root', self.owner).strip(), self.pem.strip())
+            private_key_pem(self.root, 'root').strip(), self.pem.strip())
 
     def test_command_is_idempotent(self):
         for _ in range(2):

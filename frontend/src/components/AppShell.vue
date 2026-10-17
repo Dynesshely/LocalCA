@@ -1,14 +1,8 @@
 <script setup>
 /**
- * Application chrome.
- *
- * Layout: a fixed-width sidebar on the left, and to its right a column holding
- * the top bar and the scrolling content area. Only the content area scrolls --
- * the sidebar and the top bar stay put, which is what makes a long certificate
- * hierarchy comfortable to read.
- *
- * Below `lg` the sidebar becomes an off-canvas drawer, because 16rem of chrome
- * on a phone leaves no room for the tables this application is made of.
+ * The application chrome: a fixed sidebar, a top bar, and one scrolling content
+ * column — only the content scrolls, which is what keeps a long hierarchy
+ * readable. Below `lg` the sidebar becomes a drawer.
  */
 import { computed, ref, watch } from 'vue'
 import { RouterLink, RouterView, useRoute, useRouter } from 'vue-router'

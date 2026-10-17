@@ -1,16 +1,10 @@
 /**
- * Downloading a certificate in any format.
+ * Downloading a certificate in any format, from every page that offers one.
  *
- * One composable rather than the same twenty lines in the hierarchy page and
- * both creation pages. It owns the three decisions a download involves:
- *
- *   * public format  -> fetch it now;
- *   * needs a password -> ask for one, then fetch;
- *   * unprotected    -> ask for an explicit confirmation first, then fetch.
- *
- * A locked vault is a normal, expected answer from the server, not an error: it
- * comes back as 409 + `vault_locked`, and this offers to unlock and then retries
- * the very download that was refused.
+ * A format decides the flow: public fetches immediately, `password` asks for an
+ * export password, `confirm` asks for an explicit acknowledgement. A locked
+ * credential (409 `vault_locked`) is not an error but the usual "open it, then
+ * retry this exact download" answer.
  */
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'

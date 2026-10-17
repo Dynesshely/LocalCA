@@ -112,4 +112,3 @@ class Command(BaseCommand):
                 f'account and cannot be wrapped (there is no password to derive '
                 f'from). Assign an owner or delete them; they remain readable as '
                 f'plaintext until then. Run `manage.py vault_status` to see them.'))
-

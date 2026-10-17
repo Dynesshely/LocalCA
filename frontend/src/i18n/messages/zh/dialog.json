@@ -26,20 +26,6 @@
       "warningCascade": "这会立即且不可逆地删除私钥材料，以及由它签发的 {count} 张证书。如果你只是想让它失效，请改用吊销。",
       "warning": "这会立即且不可逆地删除私钥材料，且无法撤销。"
     },
-    "vault": {
-      "title": "解锁私钥",
-      "firstTimeIntro": "证书私钥以加密形式存储。请设置一个{password}来保护它们——此后 LocalCA 每次需要签名或导出密钥时，都会要求你输入这个密码。",
-      "intro": "私钥在静态存储时是加密的。请输入密钥库密码，以便用它进行签名和导出。",
-      "noRecovery": "密码无法找回。",
-      "noRecoveryWarning": "{lead}如果你忘记这个密码，此账户下的所有私钥都会永久无法读取——包括任何 CA 私钥。任何人（包括管理员）都无法重置。",
-      "choosePassword": "设置密钥库密码",
-      "password": "密钥库密码",
-      "passwordPlaceholder": "至少 8 个字符",
-      "passwordHelp": "至少 8 个字符；越长越好，它离线保护你的 CA 密钥。",
-      "submitFirstTime": "设置密码并解锁",
-      "submit": "解锁",
-      "error": "无法打开密钥库。"
-    },
     "export": {
       "title": {
         "protected": "导出加密私钥",

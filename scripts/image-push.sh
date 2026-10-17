@@ -19,7 +19,7 @@
 # 说明：这个镜像只含**应用**（Django + gunicorn + 构建好的 SPA），它监听 8000，
 # 不提供静态文件；静态文件由同卷的 nginx 提供，所以部署还需要 nginx
 # （用 stock nginx:alpine + 本仓库的 nginx.conf，或用 Dockerfile.nginx 自建）。
-# 对外的 80 端口由 nginx 暴露，见 docker-compose-from-registry.yml。
+# 对外的 80 端口由 nginx 暴露，见 docker-compose-harbor.yml。
 
 set -euo pipefail
 
@@ -78,7 +78,7 @@ fi
 
 echo
 echo ">>> 完成。本机跑起来（含 nginx，按仓库里的 compose）："
-echo "    docker compose -f docker-compose-from-registry.yml up -d"
+echo "    docker compose -f docker-compose-harbor.yml up -d"
 echo "    或只跑应用容器（需自行提供静态文件服务）："
 echo "    docker run --rm -p 8000:8000 \\"
 echo "      -e DJANGO_SECRET_KEY=\$(python3 -c 'import secrets;print(secrets.token_urlsafe(50))') \\"
