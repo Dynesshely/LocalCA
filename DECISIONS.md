@@ -7,6 +7,21 @@
 
 ---
 
+## 2026-10-17 · 项目洗澡，以及 api 包
+
+| # | 决策 | 谁定的 | 理由 / 怎么改 |
+| --- | --- | --- | --- |
+| D55 | `api.py`（1609 行）拆成 `LocalCA/api/` 包，按端点**分级**分成 11 个模块；`__init__.py` 把每个 view 重新导出，`api_urls`／`urls`／测试继续用 `api.api_*` | 用户明确要求 | 单文件里靠六条横幅注释导航，找「导出格式表在哪」要先滚 1200 行。现在读层级 →`certificates`、签/续 →`issuance`、吊销/删除 →`lifecycle`、下载 →`downloads`，每个模块一个主题，最大的 `keystore.py` 也只有 300 行 |
+| D56 | 拆分由脚本按 AST 行区间复制，**每个模块的 import 从它实际引用的标识符推导**，而不是手抄 | agent 默认 | 手抄 1600 行必然漏 import 或留下多余 import。脚本跑完后只需要人工处理三件事：两段属于「表」而非「函数」的注释（`CERTIFICATE_KINDS`、`DOWNLOAD_FORMATS`），以及函数体内的相对 import 需要多一层点 |
+| D57 | 拆分同时合并两处重名工具：`_download_name` 与 `certificate_display_name` 完全相同 → 只留后者；`_download_kind` 是 `CERTIFICATE_KINDS` 的反查 → 变成 `common.kind_of()` | agent 默认 | 「同一个名字的两种写法」比重复代码更糟：读者会以为两者有区别 |
+
+> 验收：**233 项**后端测试全绿；pylint 全仓 9.30/10、`api/` 包 9.85/10（只剩「测试缺 docstring」与复杂度阈值）；
+> `manage.py check` 与 `makemigrations --check` 均无问题；三套浏览器验收
+> `verify_ui` **28/28**、`verify_renew` **12/12**、`verify_keystore` **13/13** 均未回归。
+> `api/__init__.py` 的 `__all__` 是这套拆分的契约：新增端点必须在这里导出，否则 URL 配置看不到它。
+
+---
+
 ## 2026-10-09 · 证书更新（改 SAN 后重签）
 
 | # | 决策 | 谁定的 | 理由 / 怎么改 |

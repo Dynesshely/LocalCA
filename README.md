@@ -509,7 +509,18 @@ LocalCA is split into a JSON API and a single-page frontend:
 localca_project/          Django: JSON API, ORM, auth, certificate operations
   LocalCA/
     api_urls.py           The API's URL map
-    api.py                Endpoints: session/CSRF auth, JSON in and out
+    api/                  The endpoints, one module per thing they do:
+      common.py             request/response plumbing, permissions, kind map
+      auth.py               session, login, logout, password change
+      keystore.py           named credentials and the keys they wrap
+      meta.py               static tables the interface renders from
+      certificates.py       reading the hierarchy
+      issuance.py           creating and renewing certificates
+      lifecycle.py          revoking and deleting certificates
+      downloads.py          downloads, and the format table they answer from
+      imports.py            importing existing certificate material
+      audit.py              the audit log
+      shell.py              the SPA shell
     serializers.py        Certificate -> JSON, including per-user rights
     ca.py                 Certificate generation (cryptography; never shells out to openssl)
     forms.py              Server-side validation for every certificate input
