@@ -20,9 +20,10 @@ import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
 import { useKeystoreStore } from '@/stores/keystore'
 import { useToastStore } from '@/stores/toasts'
+import { formatDate } from '@/utils/date'
 import { ApiError } from '@/api/client'
 
-const { t, d } = useI18n()
+const { t } = useI18n()
 const auth = useAuthStore()
 const certificates = useCertificatesStore()
 const keystore = useKeystoreStore()
@@ -108,9 +109,6 @@ function download(cert, kind) {
 }
 
 /** Short date in the reader's locale, not the browser's default formatting. */
-function formatDay(value) {
-  return value ? d(new Date(value), 'short') : ''
-}
 </script>
 
 <template>
@@ -205,7 +203,7 @@ function formatDay(value) {
                     </span>
                   </td>
                   <td class="px-3 py-2 whitespace-nowrap text-slate-600 dark:text-slate-300">
-                    {{ formatDay(root.valid_until) }}
+                    {{ formatDate(root.valid_until) }}
                   </td>
                   <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ root.owner || '-' }}</td>
                   <td class="px-3 py-2">
@@ -343,7 +341,7 @@ function formatDay(value) {
                   </td>
                   <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ ca.signed_by?.name }}</td>
                   <td class="px-3 py-2 whitespace-nowrap text-slate-600 dark:text-slate-300">
-                    {{ formatDay(ca.valid_until) }}
+                    {{ formatDate(ca.valid_until) }}
                   </td>
                   <td class="px-3 py-2">
                     <DownloadMenu

@@ -19,9 +19,10 @@ import { useAuthStore } from '@/stores/auth'
 import { useCertificatesStore } from '@/stores/certificates'
 import { useKeystoreStore } from '@/stores/keystore'
 import { useToastStore } from '@/stores/toasts'
+import { formatDate } from '@/utils/date'
 import { ApiError } from '@/api/client'
 
-const { t, d } = useI18n()
+const { t } = useI18n()
 const auth = useAuthStore()
 const certificates = useCertificatesStore()
 const keystore = useKeystoreStore()
@@ -117,9 +118,6 @@ async function confirmAction(payload) {
 }
 
 /** Short date in the reader's locale, not the browser's default formatting. */
-function formatDay(value) {
-  return value ? d(new Date(value), 'short') : ''
-}
 </script>
 
 <template>
@@ -239,8 +237,7 @@ function formatDay(value) {
                 <tr>
                   <th class="px-3 py-2 font-medium">{{ t('leaf.list.commonName') }}</th>
                   <th class="px-3 py-2 font-medium">{{ t('leaf.list.status') }}</th>
-                  <th class="px-3 py-2 font-medium">{{ t('leaf.list.signedBy') }}</th>
-                  <th class="px-3 py-2 font-medium">{{ t('leaf.list.expires') }}</th>
+                  <th class="px-3 py-2 text-right font-medium">{{ t('leaf.list.expires') }}</th>
                   <th class="px-3 py-2 font-medium">{{ t('leaf.list.actions') }}</th>
                 </tr>
               </thead>
@@ -258,8 +255,14 @@ function formatDay(value) {
                     >
                       {{ leaf.name }}
                     </div>
-                    <div v-if="leaf.sans?.length" class="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                      {{ t('common.field.sanLabel') }} {{ leaf.sans.join(', ') }}
+                    <div class="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      <div v-if="leaf.sans?.length">
+                        {{ t('common.field.sanLabel') }} {{ leaf.sans.join(', ') }}
+                      </div>
+                      <!-- Wrapped rather than ellipsised: `truncate` here makes
+                           the column's preferred width the whole CA name, which
+                           pushed the table wider than its card. -->
+                      <div>{{ t('leaf.list.signedBy') }}: {{ leaf.signed_by?.name }}</div>
                     </div>
                   </td>
                   <td class="px-3 py-2">
@@ -277,23 +280,24 @@ function formatDay(value) {
                       {{ t('common.status.active') }}
                     </span>
                   </td>
-                  <td class="px-3 py-2 text-slate-600 dark:text-slate-300">{{ leaf.signed_by?.name }}</td>
-                  <td class="px-3 py-2 whitespace-nowrap text-slate-600 dark:text-slate-300">
-                    {{ formatDay(leaf.valid_until) }}
+                  <td class="px-3 py-2 text-right whitespace-nowrap text-slate-600 dark:text-slate-300">
+                    {{ formatDate(leaf.valid_until) }}
                   </td>
-                  <td class="px-3 py-2">
-                    <div class="flex flex-wrap items-center gap-1">
+                  <!-- Two even columns: four buttons in a free-running row made
+                       every row a different shape, and the narrow column clipped
+                       the last one. A grid keeps the same footprint whatever a
+                       row actually offers (a revoked leaf has no Revoke). -->
+                  <td class="pr-3 pl-2 py-2">
+                    <div class="grid w-[11.5rem] grid-cols-2 gap-1">
                       <DownloadMenu
+                        block
                         :certificate="leaf"
                         :has-key="leaf.has_key !== false"
                         @choose="(format) => downloads.run(leaf, format)"
                       />
-                      <!-- Renewal replaces the certificate, so a leaf that
-                           already has a successor offers the chip instead of a
-                           second renewal. -->
                       <span
                         v-if="leaf.renewed_by"
-                        class="inline-block whitespace-nowrap rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+                        class="flex items-center justify-center rounded-lg bg-slate-200 px-2 py-1 text-xs font-medium text-slate-700 dark:bg-slate-700 dark:text-slate-200"
                         :title="t('renew.chipTitle', { serial: leaf.renewed_by.serial_number })"
                         :data-testid="`renewed-leaf-${leaf.id}`"
                       >
@@ -302,7 +306,7 @@ function formatDay(value) {
                       <button
                         v-else
                         type="button"
-                        class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
+                        class="rounded-lg border border-slate-300 px-2 py-1 text-xs font-medium whitespace-nowrap text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-700"
                         :data-testid="`renew-leaf-${leaf.id}`"
                         @click="renewing = leaf"
                       >
@@ -311,7 +315,7 @@ function formatDay(value) {
                       <button
                         v-if="!leaf.revocation"
                         type="button"
-                        class="rounded-lg border border-red-300 px-2 py-1 text-xs font-medium text-red-700 transition hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
+                        class="rounded-lg border border-red-300 px-2 py-1 text-xs font-medium whitespace-nowrap text-red-700 transition hover:bg-red-50 dark:border-red-800 dark:text-red-300 dark:hover:bg-red-950/40"
                         :data-testid="`revoke-leaf-${leaf.id}`"
                         @click="openAction('revoke', leaf)"
                       >
@@ -319,7 +323,8 @@ function formatDay(value) {
                       </button>
                       <button
                         type="button"
-                        class="rounded-lg bg-red-600 px-2 py-1 text-xs font-medium text-white transition hover:bg-red-500"
+                        class="rounded-lg bg-red-600 px-2 py-1 text-xs font-medium whitespace-nowrap text-white transition hover:bg-red-500"
+                        :class="{ 'col-span-2': leaf.revocation }"
                         :data-testid="`delete-leaf-${leaf.id}`"
                         @click="openAction('delete', leaf)"
                       >

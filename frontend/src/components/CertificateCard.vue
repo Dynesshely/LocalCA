@@ -11,6 +11,7 @@ import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import DownloadMenu from '@/components/DownloadMenu.vue'
 import AppIcon from '@/components/AppIcon.vue'
+import { formatDate } from '@/utils/date'
 
 const props = defineProps({
   certificate: { type: Object, required: true },
@@ -22,7 +23,7 @@ const props = defineProps({
 // each one requires, is the server's table, not this component's business.
 const emit = defineEmits(['download', 'renew', 'revoke', 'delete'])
 
-const { t, d } = useI18n()
+const { t } = useI18n()
 
 const KIND_KEYS = {
   root: 'home.kind.root',
@@ -84,11 +85,6 @@ const isExpired = computed(() => {
 })
 
 /** Short date in the reader's locale, not the browser's default formatting. */
-function formatDate(value) {
-  if (!value) return '-'
-  return d(new Date(value), 'short')
-}
-
 function formatExpiry() {
   const days = props.certificate.expires_in_days
   if (typeof days !== 'number') return '-'

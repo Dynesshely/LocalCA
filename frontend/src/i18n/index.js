@@ -100,12 +100,6 @@ export const i18n = createI18n({
   locale: detectLocale(),
   fallbackLocale: FALLBACK_LOCALE,
   messages: loadMessages(),
-  // A certificate expiry is written with `d(value, 'short')` so it follows the
-  // reader's locale instead of the browser's default layout.
-  datetimeFormats: {
-    en: { short: { year: 'numeric', month: 'short', day: 'numeric' } },
-    zh: { short: { year: 'numeric', month: 'long', day: 'numeric' } },
-  },
   // A missing key is a bug, and silently rendering the key makes it look like a
   // layout problem. Keep it visible in development, quiet in production.
   missingWarn: import.meta.env.DEV,

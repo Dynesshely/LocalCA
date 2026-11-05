@@ -13,6 +13,8 @@ const props = defineProps({
   certificate: { type: Object, required: true },
   /** False for a certificate imported without a key: it has nothing to give. */
   hasKey: { type: Boolean, default: true },
+  /** Fill the host's width, for hosts that stack it above other actions. */
+  block: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['choose'])
@@ -139,10 +141,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div ref="root" class="relative">
+  <div ref="root" class="relative" :class="block ? 'w-full' : ''">
     <button
       type="button"
-      class="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+      class="flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium whitespace-nowrap text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+      :class="block ? 'w-full justify-center' : ''"
       aria-haspopup="menu"
       :aria-expanded="open"
       :data-testid="`download-menu-${certificate.id}`"

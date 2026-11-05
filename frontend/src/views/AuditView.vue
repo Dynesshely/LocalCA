@@ -10,8 +10,9 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { audit } from '@/api'
 import { useToastStore } from '@/stores/toasts'
+import { formatDateTime } from '@/utils/date'
 
-const { t, d } = useI18n()
+const { t } = useI18n()
 const toasts = useToastStore()
 const entries = ref([])
 const loading = ref(true)
@@ -51,16 +52,6 @@ const ACTION_META = {
 
 const NEUTRAL_BADGE = 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300'
 
-/** A timestamp is only useful with its time, so the day alone will not do. */
-const TIMESTAMP_FORMAT = {
-  year: 'numeric',
-  month: 'short',
-  day: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-}
-
 const actionTone = (action) => ACTION_META[action]?.tone || NEUTRAL_BADGE
 
 /** An action code this interface knows becomes a label; anything else stays as-is. */
@@ -69,7 +60,8 @@ function actionLabel(action) {
   return key ? t(key) : action
 }
 
-const formatTimestamp = (value) => d(new Date(value), TIMESTAMP_FORMAT)
+// A timestamp is only useful with its time, so the day alone will not do.
+const formatTimestamp = (value) => formatDateTime(value)
 
 async function load() {
   loading.value = true
