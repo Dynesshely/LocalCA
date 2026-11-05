@@ -375,9 +375,10 @@ disagree.
 | Private key, encrypted | PKCS#8 `.key`, protected by a password you choose |
 | Private key, unencrypted | PKCS#8 `.key`, no password — what nginx and apache need |
 | Certificate + key bundle | A `.zip` holding `.crt`, `.key` and `chain.pem` |
+| Full chain + key bundle | A `.zip` holding one `-fullchain.pem` (certificate, issuers, root last) and its unencrypted `.key` |
 
 The first four are **public**: they are the certificate material a client needs
-in order to trust this CA, so they need no session. The last four contain the
+in order to trust this CA, so they need no session. The last five contain the
 private key and require all of:
 
 * an authenticated session, and that the certificate is **yours** — staff can

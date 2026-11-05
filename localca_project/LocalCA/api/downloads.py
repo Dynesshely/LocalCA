@@ -6,7 +6,10 @@ requires, and it is served to the SPA, so a menu cannot offer a format
 these endpoints do not answer.
 """
 
+import io
+import zipfile
 from urllib.parse import quote
+
 from django.http import Http404
 from django.utils import timezone
 from django.utils.translation import gettext as _
@@ -74,6 +77,7 @@ DOWNLOAD_FORMATS = (
     {'id': 'key', 'access': 'private', 'requires': 'password'},
     {'id': 'key-plain', 'access': 'private', 'requires': 'confirm'},
     {'id': 'pair-zip', 'access': 'private', 'requires': 'confirm'},
+    {'id': 'chain-key-zip', 'access': 'private', 'requires': 'confirm'},
 )
 
 
@@ -278,24 +282,45 @@ def _download_private(request, cert, spec):
 
     # pair-zip: what an operator actually pastes onto a web server. The chain is
     # included because that is the file nginx and apache are pointed at too.
-    import io
-    import zipfile
+    if spec['id'] == 'pair-zip':
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(f'{name}.crt', cert.public_key)
+            archive.writestr(f'{name}.key', plain)
+            archive.writestr(
+                'chain.pem',
+                ''.join(node.public_key for node in _chain_certificates(cert)[1:]))
+            archive.writestr(
+                'README.txt',
+                f'{name}\n\n'
+                f'{name}.crt  the certificate\n'
+                f'{name}.key  its private key, NOT encrypted — keep it readable only '
+                f'by the service that uses it\n'
+                f'chain.pem   the issuing certificates, if the service wants a chain\n\n'
+                f'Downloaded from LocalCA on {timezone.now().isoformat()}\n')
+        _audit_download(request, cert, 'DOWNLOAD_PRIVATE_KEY',
+                        'certificate and UNENCRYPTED private key (ZIP)')
+        return _file_response(buffer.getvalue(), f'{name}-pair.zip', 'application/zip')
 
+    # chain-key-zip: the same key, but with the certificate *and its issuers* in
+    # one PEM. That is the file a service is pointed at when it wants to present
+    # the whole path without being handed three files to concatenate itself, and
+    # keeping it in one archive means the key cannot be separated from the chain
+    # it belongs to.
+    full_chain = ''.join(node.public_key for node in _chain_certificates(cert))
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr(f'{name}.crt', cert.public_key)
+        archive.writestr(f'{name}-fullchain.pem', full_chain)
         archive.writestr(f'{name}.key', plain)
-        archive.writestr(
-            'chain.pem',
-            ''.join(node.public_key for node in _chain_certificates(cert)[1:]))
         archive.writestr(
             'README.txt',
             f'{name}\n\n'
-            f'{name}.crt  the certificate\n'
-            f'{name}.key  its private key, NOT encrypted — keep it readable only '
-            f'by the service that uses it\n'
-            f'chain.pem   the issuing certificates, if the service wants a chain\n\n'
+            f'{name}-fullchain.pem  the certificate followed by its issuers, root '
+            f'last — point the service at this one file\n'
+            f'{name}.key           its private key, NOT encrypted — keep it readable '
+            f'only by the service that uses it\n\n'
             f'Downloaded from LocalCA on {timezone.now().isoformat()}\n')
     _audit_download(request, cert, 'DOWNLOAD_PRIVATE_KEY',
-                    'certificate and UNENCRYPTED private key (ZIP)')
-    return _file_response(buffer.getvalue(), f'{name}-pair.zip', 'application/zip')
+                    'full chain and UNENCRYPTED private key (ZIP)')
+    return _file_response(buffer.getvalue(), f'{name}-fullchain-key.zip',
+                          'application/zip')

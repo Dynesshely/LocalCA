@@ -1128,6 +1128,44 @@ class DownloadApiTests(ApiTestBase):
             chain = archive.read('chain.pem').decode()
             self.assertEqual(chain.count('BEGIN CERTIFICATE'), 2)
 
+    def test_chain_key_zip_packages_the_full_chain_with_the_key(self):
+        '''
+        The whole path in one PEM, plus the key: a service that wants both does not
+        have to concatenate three files itself, and the key cannot be separated
+        from the chain it belongs to.
+        '''
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        response = self.post_form(self.url('chain-key-zip'), {'confirm': 'true'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/zip')
+
+        import io
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+            names = set(archive.namelist())
+            self.assertIn(f'{self.leaf.common_name}-fullchain.pem', names)
+            self.assertIn(f'{self.leaf.common_name}.key', names)
+            self.assertIn('README.txt', names)
+            # `pair-zip` splits the leaf out of the chain; this one does not.
+            self.assertNotIn('chain.pem', names)
+
+            chain = archive.read(
+                f'{self.leaf.common_name}-fullchain.pem').decode()
+            self.assertEqual(chain.count('BEGIN CERTIFICATE'), 3)
+            # Root last: the order a server wants in `ssl_trusted_certificate`.
+            self.assertLess(chain.index(self.leaf.public_key.strip()[:60]),
+                            chain.index(self.root.public_key.strip()[:60]))
+
+            key = archive.read(f'{self.leaf.common_name}.key').decode()
+            self.assertIn('BEGIN PRIVATE KEY', key)
+            self.assertNotIn('ENCRYPTED', key)
+
+    def test_chain_key_zip_needs_the_same_confirm_as_the_other_zip(self):
+        self.client.login(username='api-owner', password='pw-Owner-123')
+        response = self.post_form(self.url('chain-key-zip'), {})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('confirm', response.json()['errors'][0])
+
     def test_a_certificate_without_a_key_cannot_be_exported(self):
         '''Imported inventory can be listed and revoked, but has no key to give.'''
         keyless = LeafCertificate.objects.create(

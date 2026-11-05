@@ -20,6 +20,7 @@ const NEEDS = {
   key: 'password',
   'key-plain': 'confirm',
   'pair-zip': 'confirm',
+  'chain-key-zip': 'confirm',
 }
 
 export const DOWNLOAD_FALLBACK_NAMES = {
@@ -31,6 +32,7 @@ export const DOWNLOAD_FALLBACK_NAMES = {
   key: '.key',
   'key-plain': '.key',
   'pair-zip': '-pair.zip',
+  'chain-key-zip': '-fullchain-key.zip',
 }
 
 export function useCertificateDownload() {

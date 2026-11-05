@@ -30,7 +30,7 @@ const position = ref({ top: 0, left: 0 })
 const MENU_WIDTH = 288
 
 const PUBLIC_FORMATS = ['pem', 'der', 'chain', 'p7b']
-const PRIVATE_FORMATS = ['pkcs12', 'key', 'key-plain', 'pair-zip']
+const PRIVATE_FORMATS = ['pkcs12', 'key', 'key-plain', 'pair-zip', 'chain-key-zip']
 
 /** Only the formats the server advertised, in the order this menu wants them. */
 function pick(ids) {
