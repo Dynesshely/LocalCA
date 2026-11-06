@@ -307,7 +307,7 @@ metaApi.get().then((payload) => {
 
             <div class="overflow-x-auto">
               <table class="w-full text-left text-xs" data-testid="import-plan-table">
-                <thead class="sticky top-0 bg-slate-50 text-slate-600 dark:bg-slate-950/70 dark:text-slate-300">
+                <thead class="sticky top-0 z-10 border-b border-slate-200 bg-slate-50 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
                   <tr>
                     <th class="py-2 pe-3 font-medium">{{ t('import.table.certificate') }}</th>
                     <th class="py-2 pe-3 font-medium">{{ t('import.table.type') }}</th>
