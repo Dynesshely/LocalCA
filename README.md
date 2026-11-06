@@ -132,7 +132,7 @@ can time out on them):
 ```bash
 export HARBOR_HOST=registry.example.net
 export HARBOR_PROJECT=myproject
-./scripts/image-push.sh 2.2.1        # or: ./scripts/image-push.sh
+./scripts/image-push.sh 2.2.2        # or: ./scripts/image-push.sh
 ```
 
 The tag defaults to the version in `frontend/package.json`. The 8000-port image
