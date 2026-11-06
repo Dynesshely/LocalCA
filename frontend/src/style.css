@@ -54,4 +54,62 @@
     outline: 2px solid var(--color-brand-400);
     outline-offset: 2px;
   }
+
+  /* -------------------------------------------------------------------------
+     Scrollbars.
+
+     The OS default is a full-width bar with its own arrow buttons and a light
+     gutter, which reads as a second border inside the tables and the content
+     column, and in the dark theme it stays light. These rules replace it with a
+     thin, rounded thumb on a transparent track so the scrollbar only shows when
+     it is needed, and follow the theme through `html.dark`.
+
+     `scrollbar-color` is the standard property (Firefox, and current Chromium);
+     the `::-webkit-*` rules cover engines that still paint the older scrollbar.
+     Both are declared so neither engine falls back to the platform look.
+     ------------------------------------------------------------------------- */
+  html {
+    scrollbar-color: theme(--color-slate-300) transparent;
+    scrollbar-width: thin;
+  }
+
+  html.dark {
+    scrollbar-color: theme(--color-slate-600) transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    /* The transparent border plus `content-box` is what rounds the thumb: the
+       radius applies to the clipped background, not to the element box. */
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-color: theme(--color-slate-300);
+    background-clip: content-box;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: theme(--color-slate-400);
+  }
+
+  html.dark ::-webkit-scrollbar-thumb {
+    background-color: theme(--color-slate-600);
+  }
+
+  html.dark ::-webkit-scrollbar-thumb:hover {
+    background-color: theme(--color-slate-500);
+  }
+
+  /* The little square where two scrollbars meet would otherwise be painted with
+     the platform colour. */
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
