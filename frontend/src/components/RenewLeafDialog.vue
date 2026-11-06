@@ -67,14 +67,17 @@ watch(
  * Send one attempt.
  *
  * Split out from `submit` because the retry after opening a credential has to run
- * the same request again without the dialog being on screen.
+ * the same request again without the dialog on screen -- by which point the host
+ * has already cleared `certificate`. The target id and name are therefore passed
+ * in rather than read again from the props.
  */
-async function run(payload) {
+async function run(payload, targetId = props.certificate?.id,
+                   targetName = props.certificate?.name || '') {
   busy.value = true
   errors.value = []
   fieldErrors.value = {}
   try {
-    const result = await certificates.renew(props.certificate.id, payload)
+    const result = await certificates.renew(targetId, payload)
     toasts.success(t('renew.success', {
       name: result.certificate.name,
       serial: result.certificate.serial_number,
@@ -87,11 +90,16 @@ async function run(payload) {
       // under) is closed. Close this dialog first -- two stacked dialogs is a
       // worse question than one -- and let the shell ask, then retry this exact
       // request.
+      //
+      // `name` is a computed ref: inside `<script setup>` it is *not* unwrapped,
+      // so passing it to `t()` would hand vue-i18n a Vue object and the
+      // interpolator would throw before the unlock was ever requested.
+      const reason = t('renew.unlockReason', { name: targetName })
       emit('close')
       keystore.requestUnlock({
-        reason: t('renew.unlockReason', { name }),
+        reason,
         credentialId: err.credentialId,
-        retry: () => run(payload),
+        retry: () => run(payload, targetId, targetName),
       })
       return
     }
