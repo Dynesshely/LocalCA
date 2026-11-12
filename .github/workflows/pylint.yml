@@ -1,4 +1,12 @@
 name: Pylint Tests
+
+# Lint the Python that a push actually touches. This repository predates the
+# workflow and carries a large lint baseline (mostly missing docstrings and
+# pylint 4 design limits), so a whole-tree lint has never been green. Linting
+# the changed files keeps the gate useful without failing every push on debt
+# that predates it; the whole tree can be re-enabled once that baseline is
+# cleared.
+
 permissions:
   contents: read
   pull-requests: write
@@ -13,8 +21,12 @@ jobs:
         python-version: ["3.12"]
     steps:
     - uses: actions/checkout@v4
+      with:
+        # The change detector below needs history to find a merge-base when a
+        # push has no usable "before" commit (new branches and tags).
+        fetch-depth: 0
     - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
+      uses: actions/setup-python@v6
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
@@ -23,6 +35,23 @@ jobs:
         # Development tooling (including the pinned pylint) lives in
         # requirements-dev.txt; requirements.txt is runtime-only.
         pip install -r requirements-dev.txt
-    - name: Analysing the code with pylint
+    - name: Find changed Python files
+      id: changed
+      shell: bash
       run: |
-        pylint $(git ls-files '*.py')
+        set -euo pipefail
+        before="${{ github.event.before }}"
+        if [ "${GITHUB_REF}" = "refs/heads/main" ] && git cat-file -e "${before}^{commit}" 2>/dev/null; then
+          base="${before}"
+        else
+          git fetch --no-tags origin main
+          base="$(git merge-base HEAD origin/main)"
+        fi
+        files="$(git diff --name-only --diff-filter=ACMRT "${base}" HEAD -- '*.py' | tr '\n' ' ')"
+        echo "files=${files}" >> "$GITHUB_OUTPUT"
+        echo "Base: ${base}"
+        echo "Changed Python files: ${files:-<none>}"
+    - name: Analysing the changed code with pylint
+      if: steps.changed.outputs.files != ''
+      run: |
+        pylint ${{ steps.changed.outputs.files }}

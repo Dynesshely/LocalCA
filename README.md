@@ -113,7 +113,8 @@ password**; set `DJANGO_SUPERUSER_PASSWORD` before the first start to choose you
 `docker compose down` stops the stack and keeps the volumes; `down -v` removes them. To run a
 published image instead of building, use `docker-compose-harbor.yml` with `LOCALCA_IMAGE` and
 `LOCALCA_TAG`; [scripts/image-push.sh](scripts/image-push.sh) tags and pushes the application
-image to a registry of your own (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)).
+image to a registry of your own (see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)). Version tags
+(`vX.Y.Z`) are built by CI and published to GitHub Container Registry; see the same page.
 
 ## Configuration
 
