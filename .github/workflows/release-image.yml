@@ -34,7 +34,7 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           version="${tag#v}"
-          package="$(node -p "require('./frontend/package.json').version")"
+          package="$(jq -r .version frontend/package.json)"
 
           echo "Tag:     ${tag}"
           echo "Version: ${version}"
