@@ -55,6 +55,41 @@ The application image runs unprivileged (`APP_UID`/`APP_GID`, default 10001). If
 your bind-mounted `db` is owned by another account, either `chown` it or build
 with `--build-arg APP_UID=$(id -u) --build-arg APP_GID=$(id -g)`.
 
+### GitHub Container Registry
+
+The [`Release image`](../.github/workflows/release-image.yml) workflow publishes both images when
+a version tag is pushed. The tag must match the version in `frontend/package.json`, otherwise the
+run stops before building anything:
+
+```bash
+# frontend/package.json is 2.2.3
+git tag v2.2.3
+git push origin v2.2.3
+```
+
+| Image | Contents |
+| --- | --- |
+| `ghcr.io/dynesshely/localca` | The Django application and the built SPA (port 8000) |
+| `ghcr.io/dynesshely/localca-nginx` | `nginx:alpine` with this repository's `nginx.conf` |
+
+Each image is tagged with the release version (`2.2.3`), `2.2`, `2`, `sha-<short>`, and
+`latest` for stable tags. Pre-release tags (for example `v2.2.3-rc1`) do not move `latest`.
+Both images are built for `linux/amd64` and `linux/arm64`.
+
+The workflow authenticates to GHCR with the repository's `GITHUB_TOKEN` (`packages: write`), so no
+registry secret is required. New packages are private by default; make them public in the package
+settings if you want anonymous pulls, or authenticate before pulling:
+
+```bash
+echo "$GHCR_TOKEN" | docker login ghcr.io -u <username> --password-stdin
+docker pull ghcr.io/dynesshely/localca:2.2.3
+```
+
+`docker-compose-harbor.yml` can run these images through `LOCALCA_IMAGE` / `LOCALCA_TAG`; the
+nginx image is optional, since the compose file already embeds the same configuration.
+
+The local `scripts/image-push.sh` path remains available for publishing to another registry.
+
 ## Required configuration
 
 Django refuses to start without a secret key. Copy `.env.example` to `.env`

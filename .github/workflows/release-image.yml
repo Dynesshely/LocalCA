@@ -1,0 +1,137 @@
+name: Release image
+
+# Publishing path: pushing a version tag (vX.Y.Z) builds the application image and
+# the nginx sidecar image, then publishes both to GitHub Container Registry (GHCR).
+#
+# The tag must match the version in frontend/package.json. A mismatched tag fails
+# before anything is built or pushed. The images are built for linux/amd64 and
+# linux/arm64.
+#
+# Branch and pull-request runs stay in django.yml / pylint.yml. This workflow has
+# no test job by design: it runs on a release tag, and its gate is the image
+# build itself (the same Dockerfile that ships in the repository).
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Verify the tag matches frontend/package.json
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          package="$(node -p "require('./frontend/package.json').version")"
+
+          echo "Tag:     ${tag}"
+          echo "Version: ${version}"
+          echo "Package: ${package}"
+
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::${tag} is not a semantic version tag (expected vX.Y.Z)."
+            exit 1
+          fi
+          if [ "$version" != "$package" ]; then
+            echo "::error::Tag ${tag} does not match frontend/package.json (${package}). Bump the version, commit, then tag the release commit."
+            exit 1
+          fi
+
+  build:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: localca
+            dockerfile: ./Dockerfile
+            title: Local CA
+            description: Self-hosted certificate authority for the homelab.
+          - image: localca-nginx
+            dockerfile: ./Dockerfile.nginx
+            title: Local CA nginx
+            description: Nginx sidecar for Local CA.
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Compute image name
+        id: image
+        run: |
+          # GHCR paths must be lowercase; repository owners may have uppercase
+          # letters (Dynesshely), so normalize before handing the name to Docker.
+          echo "name=${REGISTRY}/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ steps.image.outputs.name }}
+          # v2.2.3 -> 2.2.3, 2.2, 2; immutable sha-<short>; latest only for
+          # stable (non-prerelease) tags.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-') }}
+          labels: |
+            org.opencontainers.image.title=${{ matrix.title }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.documentation=${{ github.server_url }}/${{ github.repository }}/blob/main/docs/DEPLOYMENT.md
+            org.opencontainers.image.vendor=Dynesshely
+            org.opencontainers.image.licenses=AGPL-3.0-only
+
+      - name: Build and push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+      - name: Job summary
+        run: |
+          {
+            echo "### ${{ matrix.title }}"
+            echo '```'
+            echo "${{ steps.meta.outputs.tags }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
