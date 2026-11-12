@@ -1,7 +1,7 @@
 # LocalCA 项目指引
 
-本文件只放**项目专属**的开发环境约定；代码规范、架构与取舍见 `README.md` 与
-`DECISIONS.md`。跨项目通用规则见全局 `~/.dsh/AGENTS.md`。
+本文件只放**项目专属**的开发环境约定；技术概览见 `README.md`，架构与开发流程见
+`docs/DEVELOPMENT.md`，设计取舍见 `DECISIONS.md`。跨项目通用规则见全局 `~/.dsh/AGENTS.md`。
 
 ## 一、开发服务器
 
