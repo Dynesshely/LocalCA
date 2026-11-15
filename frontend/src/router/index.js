@@ -36,6 +36,12 @@ const routes = [
     meta: { requiresAuth: true, titleKey: 'common.nav.keystore' },
   },
   {
+    path: '/tokens',
+    name: 'tokens',
+    component: () => import('@/views/TokensView.vue'),
+    meta: { requiresAuth: true, titleKey: 'common.nav.tokens' },
+  },
+  {
     path: '/import',
     name: 'import',
     component: () => import('@/views/ImportView.vue'),

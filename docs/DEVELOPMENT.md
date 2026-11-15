@@ -13,6 +13,7 @@ localca_project/          Django: JSON API, ORM, auth, certificate operations
     api/                  The endpoints, one module per thing they do:
       common.py             request/response plumbing, permissions, kind map
       auth.py               session, login, logout, password change
+      tokens.py             personal access tokens: list, create, revoke
       keystore.py           named credentials and the keys they wrap
       meta.py               static tables the interface renders from
       certificates.py       reading the hierarchy
@@ -25,7 +26,9 @@ localca_project/          Django: JSON API, ORM, auth, certificate operations
     serializers.py        Certificate -> JSON, including per-user rights
     ca.py                 Certificate generation (cryptography; never shells out to openssl)
     forms.py              Server-side validation for every certificate input
-    models.py             Roots, intermediates, leaves, revocations, credentials, audit log
+    models.py             Roots, intermediates, leaves, revocations, credentials, tokens, audit log
+    access_tokens.py      PAT prefix, generation and SHA-256 digest helpers
+    middleware.py         Bearer auth and the CSRF bypass for /api/
     keys.py               Which key lives under which credential, and how to use it
     vault.py              The envelope format: scrypt KEK, root key, HKDF per key
     importers.py          Parsing uploaded bundles (content, not filenames)
@@ -34,16 +37,23 @@ localca_project/          Django: JSON API, ORM, auth, certificate operations
 frontend/                 Vue 3 SPA (Vite + Tailwind CSS 4)
   src/
     api/                  Endpoint wrappers, CSRF, error shape, downloads
-    stores/               Pinia: session, certificates, keystore, toasts
+    stores/               Pinia: session, certificates, keystore, tokens, toasts
     views/                One component per page
     components/           Shell, certificate tree, dialogs, form controls
     composables/          Shared behaviour (the download flow)
     i18n/                 Catalogs and locale handling, one file per namespace
+scripts/
+  i18n.py                 Catalogue extraction, compilation and completeness check
+  image-push.sh           Publishing an image to an external registry
+  localca_mcp.py          Dependency-free MCP stdio server authenticated by a PAT
 ```
 
-Django renders no application pages. It authenticates (session cookie plus CSRF
-token), serves the API under `/api/`, and serves the built SPA for every other
-path so client-side deep links such as `/create/leaf` work.
+Django renders no application pages. It authenticates browser requests with the
+session cookie plus CSRF token, and API clients with `Authorization: Bearer
+<personal access token>` (see [API.md](API.md)); it serves the API under `/api/`
+and the built SPA for every other path so client-side deep links such as
+`/create/leaf` work. The MCP server in `scripts/localca_mcp.py` is a separate
+stdio process that speaks to this API with a PAT (see [MCP.md](MCP.md)).
 
 ## Development
 

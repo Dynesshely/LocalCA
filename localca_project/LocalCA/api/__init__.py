@@ -31,6 +31,10 @@ from .auth import (
     api_logout,
     api_session,
 )
+from .tokens import (
+    api_token_revoke,
+    api_tokens,
+)
 from .keystore import (
     api_keystore,
     api_keystore_assign,
@@ -101,6 +105,8 @@ __all__ = [
     'api_renew_leaf_certificate',
     'api_revoke_certificate',
     'api_session',
+    'api_token_revoke',
+    'api_tokens',
     'can_manage_certificate',
     'certificate_display_name',
     'child_certificates',

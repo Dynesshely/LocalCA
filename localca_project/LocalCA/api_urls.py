@@ -18,6 +18,11 @@ urlpatterns = [
     path('password/', api.api_change_password, name='change_password'),
     path('meta/', api.api_meta, name='meta'),
 
+    # personal access tokens. Session-only management; the bearer token itself
+    # authenticates the rest of /api/ (see LocalCA.middleware).
+    path('tokens/', api.api_tokens, name='tokens'),
+    path('tokens/<int:token_id>/revoke/', api.api_token_revoke, name='token_revoke'),
+
     # keystore: named credentials, and the private keys they wrap. Credential
     # actions are POST verbs under the credential rather than a REST-ish PATCH,
     # matching the rest of this API (revoke/delete) and keeping the CSRF story

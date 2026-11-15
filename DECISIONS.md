@@ -7,6 +7,24 @@
 
 ---
 
+## 2026-11-15 · PAT、Bearer API 与 MCP Server
+
+| # | 决策 | 谁定的 | 理由 / 怎么改 |
+| --- | --- | --- | --- |
+| D58 | PAT 就是**用户身份本身**：没有独立 scope，权限完全等于创建者；token = `lca_pat_` + 32 字节 urlsafe，库里只存 SHA-256、展示前缀、`last_used_at` 与 `revoked_at`，明文只在创建响应出现一次 | 用户明确要求（"以用户的 PAT 以用户的权限进行操作"） | 现有权限判断已经集中在 `can_manage_certificate` 与各 view 里，给 PAT 加第二套 scope 会制造第二个权限事实源。要缩小权限就改用另一个账号的 PAT；staff token 自然拥有 staff 能力 |
+| D59 | PAT 管理（列表/创建/撤销）**只接受 session**，PAT 调用返回 403 | agent 默认 | 否则一个泄漏的 token 可以给自己续命或换一个新 token，撤销就失去意义。token 管理不是证书自动化的一部分 |
+| D60 | 鉴权拆成两个 middleware：CSRF 之前按 `Authorization: Bearer` 放行 `/api/` 的 CSRF，Authentication 之后再把 token 解析成 `request.user` | agent 默认 | Django 默认先 CSRF 后 Authentication；PAT 请求没有 cookie，单靠一个 middleware 要么被 CSRF 挡住，要么被 Session 用户覆盖。会话请求的 CSRF 行为保持不变（有测试） |
+| D61 | 不复制一套 API：现有 `/api/` 端点直接接受 PAT，token 自身走 `/api/tokens/` | agent 默认 | 复制端点会让权限、下载格式、错误结构出现两份实现；PAT 只是另一种认证方式，不应成为第二套业务 API |
+| D62 | MCP 是**独立 stdio 进程** `scripts/localca_mcp.py`，只用标准库；PAT 从 `LOCALCA_PAT` 环境变量读取，`LOCALCA_URL` 指向实例 | 用户明确要求（"在 PAT 的基础上集成 MCP Server"） | 不把 MCP 塞进 Django 进程，AI 客户端可以单独拉起/回收它；无第三方依赖，符合项目"零新增依赖"的取向。stdout 只走 JSON-RPC，日志走 stderr |
+| D63 | MCP 只暴露 9 个证书工具（列表/单查/签发 root/intermediate/leaf/续期/吊销/删除/签发者列表），不含 import、download、token 管理 | agent 默认 | 这些是用户要求的"证书相关 CRUD、Update"；import 是上传二进制、download 是流式文件，MCP 的 text content 不适合承载。需要时用 UI 或 HTTP API |
+| D64 | 签名类操作（创建/续期/导入密钥）仍然要求**先在 UI 解锁 keystore**；MCP 不提供传递 keystore 口令的工具 | agent 默认 | 把口令交给 AI/客户端会扩大泄漏面；API 409 `vault_locked` 已经带 credential 名，MCP 只负责把这句话翻译成可执行提示 |
+| D65 | 访问令牌页面放在 **Administration → Access Tokens**（`/tokens`），中英双语；明文只存在组件局部 ref，关闭即丢弃 | agent 默认 | 它是账号凭据，不是日常证书操作；与修改密码同组。明文不进 Pinia，避免"关掉弹窗还能在 devtools 里翻到" |
+
+> 验收：`manage.py test LocalCA` **248 项**全绿（新增 `tests_pat` 12 项、`tests_mcp` 1 项；后者起真实的 `LiveServerTestCase` + 子进程 MCP，走完整 PAT → HTTP → vault → DB 链路）；i18n check **125/125**；变更文件 pylint **10.00/10**；`pnpm build` 通过（`TokensView` 独立分包）。
+> 改法：PAT 表在 `LocalCA/models.py` + `migrations/0006`；认证在 `LocalCA/middleware.py`；token 端点在 `LocalCA/api/tokens.py`；MCP 在 `scripts/localca_mcp.py`；接口与客户端文档见 `docs/API.md`、`docs/MCP.md`。
+
+---
+
 ## 2026-10-17 · 项目洗澡，以及 api 包
 
 | # | 决策 | 谁定的 | 理由 / 怎么改 |

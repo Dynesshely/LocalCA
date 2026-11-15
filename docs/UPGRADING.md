@@ -93,7 +93,8 @@ docker initialises from the image and therefore already owns.
 
 Migrations `0002` (revocation targets and comment), `0003` (private key
 encryption) and `0004` (keystore credentials) apply in place on the existing
-database, and `0005` only adds a nullable column for renewal links. The upgrade
+database, `0005` only adds a nullable column for renewal links, and `0006` adds
+the personal access token table. The upgrade
 was verified end to end against a database from the previous version: accounts and
 their password hashes, roots/intermediates/leaves with their SANs, revocations —
 including pre-RFC 5280 free-text reasons — and the audit log all survive, and you

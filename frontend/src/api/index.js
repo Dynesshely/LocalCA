@@ -97,6 +97,14 @@ export const audit = {
   list: (limit = 100) => request(`/api/audit/?limit=${limit}`),
 }
 
+// Personal access tokens for API and MCP clients. The plaintext value is
+// returned once, by create; reads only ever answer with the stored prefix.
+export const tokens = {
+  get: () => request('/api/tokens/'),
+  create: (name) => request('/api/tokens/', { method: 'POST', body: { name } }),
+  revoke: (id) => request('/api/tokens/' + id + '/revoke/', { method: 'POST' }),
+}
+
 /**
  * Certificate import.
  *
