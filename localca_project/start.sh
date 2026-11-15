@@ -62,9 +62,11 @@ fi
 check_writable "$PROJECT_DIR/staticfiles" 'the static files directory (STATIC_ROOT)'
 
 # Migrations are committed to the repository, so the container only applies
-# them. Running makemigrations here used to generate schema changes at startup,
-# which cannot be reviewed and races when more than one replica starts.
-python manage.py migrate --noinput
+# them. The upgrade command writes a timestamped SQLite backup first when any
+# migration is pending, then applies the committed migrations. makemigrations
+# never runs here: generating schema changes at startup cannot be reviewed and
+# races when more than one replica starts.
+python manage.py upgrade
 python manage.py initadmin
 python manage.py collectstatic --noinput
 

@@ -38,6 +38,7 @@ runs on your network; nothing leaves it.
 | **Nine download formats** | PEM/DER certificate, full chain (PEM or PKCS#7), PKCS#12, encrypted or plain PKCS#8 key, and ZIP bundles. Private-key exports are owner-only, password-guarded and audited. |
 | **Import existing material** | Content-sniffed PEM, DER, PKCS#7, PKCS#12 and ZIP. Analyze first, then apply; imported keys go through the same keystore. |
 | **Renewal with lineage** | Re-issue a leaf with an edited SAN list and a fresh key pair; the old certificate is revoked as `superseded` and points at its replacement. |
+| **Safe upgrades** | Startup applies committed migrations automatically, writes a timestamped SQLite backup before the first pending one, and keeps the last five; configuration and data survive. |
 | **Audited by default** | Logins, issuance, downloads, imports and revocations are recorded. Django session auth + CSRF protect the API. |
 | **Bilingual and themed** | English and 简体中文 across the UI and server messages; light and dark themes follow the OS. |
 | **Small deployment** | Django + SQLite behind nginx, two containers, an unprivileged app user, no external services. |
@@ -177,7 +178,7 @@ python3 -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 cd localca_project
 export DJANGO_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
-python manage.py migrate && python manage.py runserver 8000
+python manage.py upgrade && python manage.py runserver 8000
 ```
 
 ```bash
@@ -200,7 +201,8 @@ and CI.
 | [docs/CERTIFICATES.md](docs/CERTIFICATES.md) | Download formats, renewal, importing and limits |
 | [docs/KEYSTORE.md](docs/KEYSTORE.md) | Keystore credentials, key states, locking, movement and recovery rules |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Reverse proxy, image publishing, time zones and required settings |
-| [docs/UPGRADING.md](docs/UPGRADING.md) | Upgrading from the single-container layout: volume paths and permissions |
+| [docs/UPGRADING.md](docs/UPGRADING.md) | Automatic upgrades, plus the one-time move from the single-container layout |
+| [docs/MIGRATIONS.md](docs/MIGRATIONS.md) | Migration policy, automatic backups, restore steps and compatibility rules |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Architecture, local setup, translations and tests |
 | [DECISIONS.md](DECISIONS.md) | Design decisions and trade-offs |
 | [SECURITY_AUDIT.md](SECURITY_AUDIT.md) | Threat model and security audit |

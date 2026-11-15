@@ -2,6 +2,24 @@
 
 > Part of the [Local CA](../README.md) documentation.
 
+## Automatic upgrades for current images
+
+If the deployment already uses the current `/app/localca_project` layout, replacing
+the image and restarting is the whole upgrade. The start script runs
+`manage.py upgrade`, which checks for pending migrations, writes a consistent
+timestamped SQLite backup under `localca_project/db/backups/`, then applies the
+committed migrations. There is no manual `migrate` step and no `makemigrations`
+in production.
+
+Your database, accounts, certificates, keystore credentials, audit log and
+configuration are preserved. If a migration or its backup fails, the container
+exits non-zero and the pre-upgrade copy remains; see
+[MIGRATIONS.md](MIGRATIONS.md) for the backup layout, restore steps and the
+compatibility rules that future releases follow.
+
+The sections below are the **one-time** move from the upstream single-container
+layout, which predates the automatic upgrade policy.
+
 If you already run an earlier LocalCA — the upstream layout, where the whole
 project sat directly in `/app` — then **replacing the image is not a drop-in
 swap**. Your certificates, accounts and audit log are compatible and survive the

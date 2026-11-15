@@ -7,7 +7,10 @@ is honoured, the catalogue is compiled and complete, field-level validation is
 addressed by field name rather than by matching a translated label, and a
 translation cannot silently fall behind the code.
 """
+# pylint: disable=missing-function-docstring
+
 import importlib.util
+import tempfile
 from pathlib import Path
 
 from django.conf import settings
@@ -50,16 +53,23 @@ class CatalogueTests(SimpleTestCase):
     def test_the_compiled_catalogue_ships_with_its_source(self):
         '''
         The .mo is committed because neither this machine nor the runtime image
-        has GNU gettext. A .po that was edited without recompiling would leave
-        the two out of step, which is invisible until a page renders English.
+        has GNU gettext. Compare the committed binary with the parser's output
+        instead of comparing mtimes: a fresh Git checkout writes the .po after
+        the .mo, so mtime order says nothing about whether the translation is
+        stale.
         '''
         mo = Path(settings.BASE_DIR) / 'locale' / 'zh_Hans' / 'LC_MESSAGES' / 'django.mo'
         self.assertTrue(mo.is_file(), 'django.mo is missing; run scripts/i18n.py compile')
 
         po = mo.with_suffix('.po')
-        self.assertGreaterEqual(
-            mo.stat().st_mtime, po.stat().st_mtime,
-            'django.mo is older than django.po; run scripts/i18n.py compile')
+        tool = load_i18n_tool()
+        catalog = tool.Catalog.parse(po.read_text(encoding='utf-8'))
+        with tempfile.TemporaryDirectory() as temporary:
+            expected = Path(temporary) / 'expected.mo'
+            tool.write_mo(catalog, expected)
+            self.assertEqual(
+                mo.read_bytes(), expected.read_bytes(),
+                'django.mo is stale; run scripts/i18n.py compile')
 
     def test_the_compiled_catalogue_is_loadable(self):
         from django.utils.translation import gettext
@@ -176,6 +186,7 @@ class ServerAuthoredTextTests(TestCase):
     '''Model labels that the interface renders are translated too.'''
 
     def test_revocation_reasons_follow_the_request_language(self):
+        """The revocation labels come back in the requested language."""
         response = self.client.get('/api/meta/', HTTP_ACCEPT_LANGUAGE='zh-hans')
         labels = {item['value']: item['label'] for item in response.json()['revocation_reasons']}
         self.assertEqual(labels['key_compromise'], '私钥泄露')
