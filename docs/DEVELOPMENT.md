@@ -31,6 +31,7 @@ localca_project/          Django: JSON API, ORM, auth, certificate operations
     importers.py          Parsing uploaded bundles (content, not filenames)
     import_service.py     Planning and applying an import
     throttle.py           Login attempt limits
+    upgrade.py            Pending-migration detection and SQLite backup helpers
 frontend/                 Vue 3 SPA (Vite + Tailwind CSS 4)
   src/
     api/                  Endpoint wrappers, CSRF, error shape, downloads
