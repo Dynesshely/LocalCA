@@ -47,11 +47,12 @@ const navGroups = computed(() => {
     administration.push({ name: 'audit', labelKey: 'common.nav.audit', icon: 'list' })
   }
   if (auth.isAuthenticated) {
-    administration.push({
-      name: 'change-password',
-      labelKey: 'common.nav.changePassword',
-      icon: 'user',
-    })
+    administration.push(
+      // Access tokens are credentials, not everyday certificate work, so they
+      // sit under Administration next to the account's own settings.
+      { name: 'tokens', labelKey: 'common.nav.tokens', icon: 'key' },
+      { name: 'change-password', labelKey: 'common.nav.changePassword', icon: 'user' },
+    )
   }
   if (administration.length) {
     groups.push({ key: 'administration', labelKey: 'common.nav.sectionAdministration', items: administration })

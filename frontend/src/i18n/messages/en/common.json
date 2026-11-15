@@ -19,7 +19,8 @@
       "closeMenu": "Close navigation",
       "signedInAs": "Signed in as {username}",
       "signedOut": "You have been logged out.",
-      "keystore": "Keystore"
+      "keystore": "Keystore",
+      "tokens": "Access Tokens"
     },
     "action": {
       "create": "Create",

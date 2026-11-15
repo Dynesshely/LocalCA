@@ -369,3 +369,24 @@ msgstr "证书请求（CSR）不是证书，请改为签发"
 
 msgid "certificate revocation lists are not imported (LocalCA serves no CRL)"
 msgstr "不导入证书吊销列表（LocalCA 不提供 CRL）"
+
+msgid "A name is required for the access token."
+msgstr "访问令牌必须填写名称。"
+
+msgid "Access tokens can only be managed from a signed-in session."
+msgstr "访问令牌只能在已登录的会话中管理。"
+
+msgid "An access token with that name already exists."
+msgstr "已存在同名访问令牌。"
+
+msgid "Invalid or revoked personal access token."
+msgstr "访问令牌无效或已被撤销。"
+
+msgid "That access token does not exist."
+msgstr "该访问令牌不存在。"
+
+msgid "That access token is already revoked."
+msgstr "该访问令牌已被撤销。"
+
+msgid "The token name cannot be longer than 100 characters."
+msgstr "令牌名称不能超过 100 个字符。"

@@ -80,8 +80,15 @@ MIDDLEWARE = [
     # middleware, before Common.
     'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
+    # Bearer requests have no session and no CSRF cookie. This runs before the
+    # CSRF check so a PAT can issue unsafe API requests; the token itself is
+    # resolved by PATAuthMiddleware after AuthenticationMiddleware.
+    'LocalCA.middleware.PATCsrfBypassMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    # Resolve Authorization: Bearer <PAT> after session auth, so a token can
+    # never be shadowed by request.user being replaced by the session user.
+    'LocalCA.middleware.PATAuthMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]

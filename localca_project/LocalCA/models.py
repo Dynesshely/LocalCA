@@ -8,6 +8,8 @@ from django.utils.translation import gettext_lazy as _
 
 
 class RootCertificate(models.Model):
+    """A self-signed root CA and the private key that signs with it."""
+
     created_by = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
@@ -38,6 +40,8 @@ class RootCertificate(models.Model):
 
 
 class IntermediateCertificate(models.Model):
+    """A CA signed by a root, with its own wrapped private key."""
+
     created_by = models.ForeignKey(
         User,
         on_delete=models.PROTECT,
@@ -132,7 +136,7 @@ class RevokedCertificate(models.Model):
     OneToOne fields (rather than a generic foreign key) keep referential
     integrity and make "revoked twice" impossible at the database level.
     '''
-    class RevocationReason(models.TextChoices):
+    class RevocationReason(models.TextChoices):  # pylint: disable=too-many-ancestors
         '''
         RFC 5280 section 5.3.1 CRLReason values.
 
@@ -210,6 +214,51 @@ class RevokedCertificate(models.Model):
         return f"Revoked: {self.target_name}"
 
 
+class PersonalAccessToken(models.Model):
+    """
+    A bearer token that lets another application act as its owner.
+
+    The raw token is shown once, at creation, and never stored: only its SHA-256
+    digest is kept, so a database copy cannot be replayed. Tokens are scoped to a
+    user (there is no separate scope model yet): a PAT has exactly the permissions
+    of the account that created it, and staff tokens can therefore manage any
+    certificate. Revocation is a timestamp rather than a delete, so the audit
+    trail and the record that the token existed survive.
+    """
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name='personal_access_tokens')
+    name = models.CharField(max_length=100)
+    #: First characters for display, e.g. 'lca_pat_ab12'. Never enough to
+    #: authenticate; the digest below is what the middleware looks up.
+    token_prefix = models.CharField(max_length=20)
+    #: SHA-256 hex digest of the full token. Unique, so lookup is one indexed
+    #: read and two tokens can never authenticate as each other.
+    token_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:  # pylint: disable=too-few-public-methods
+        """Newest first; one token name per account."""
+
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'name'],
+                name='unique_pat_name_per_user'),
+        ]
+
+    @property
+    def revoked(self):
+        """Whether the token has been revoked."""
+        return self.revoked_at is not None
+
+    def __str__(self):
+        return f'PersonalAccessToken(user={self.user_id}, name={self.name!r})'
+
+
 class AuditLog(models.Model):
     '''
     This class represents the audit log.
@@ -258,7 +307,9 @@ class VaultCredential(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
+    class Meta:  # pylint: disable=too-few-public-methods
+        """Ordering and per-account credential names."""
+
         ordering = ['name']
         constraints = [
             models.UniqueConstraint(

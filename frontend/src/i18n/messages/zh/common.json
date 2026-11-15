@@ -19,7 +19,8 @@
       "closeMenu": "关闭导航",
       "signedInAs": "当前账号：{username}",
       "signedOut": "已退出登录。",
-      "keystore": "密钥库"
+      "keystore": "密钥库",
+      "tokens": "访问令牌"
     },
     "action": {
       "create": "创建",

@@ -27,7 +27,8 @@ they get a certificate the browser already trusts. Public CAs cannot sign `.home
 
 Local CA is the missing piece: a small, self-hosted PKI console that issues a root CA you install
 once, intermediate CAs you can scope per site, and leaf certificates for every service. Everything
-runs on your network; nothing leaves it.
+runs on your network; nothing leaves it. When you need automation, a personal access token drives
+the same API from a script, or an MCP-capable AI agent through the bundled server.
 
 ## Highlights
 
@@ -38,7 +39,8 @@ runs on your network; nothing leaves it.
 | **Nine download formats** | PEM/DER certificate, full chain (PEM or PKCS#7), PKCS#12, encrypted or plain PKCS#8 key, and ZIP bundles. Private-key exports are owner-only, password-guarded and audited. |
 | **Import existing material** | Content-sniffed PEM, DER, PKCS#7, PKCS#12 and ZIP. Analyze first, then apply; imported keys go through the same keystore. |
 | **Renewal with lineage** | Re-issue a leaf with an edited SAN list and a fresh key pair; the old certificate is revoked as `superseded` and points at its replacement. |
-| **Audited by default** | Logins, issuance, downloads, imports and revocations are recorded. Django session auth + CSRF protect the API. |
+| **API and MCP** | Personal access tokens with the owner's permissions expose the JSON API to scripts and other applications, and a dependency-free MCP server lets AI agents list, issue, renew, revoke and delete certificates. |
+| **Audited by default** | Logins, issuance, downloads, imports and revocations are recorded. Session + CSRF and personal-access-token authentication both attribute actions to their user. |
 | **Bilingual and themed** | English and 简体中文 across the UI and server messages; light and dark themes follow the OS. |
 | **Small deployment** | Django + SQLite behind nginx, two containers, an unprivileged app user, no external services. |
 
@@ -70,7 +72,8 @@ runs on your network; nothing leaves it.
 | **Frontend** | Vue 3.5 · Vite 7 · Tailwind CSS 4 · Pinia · vue-i18n |
 | **Storage** | SQLite in the app directory; private keys encrypted at rest (scrypt + HKDF envelope) |
 | **Delivery** | Docker image running as uid 10001, plus nginx for static files; optional registry push via `scripts/image-push.sh` |
-| **API** | A Django JSON API under `/api/`, with one module per capability; no DRF and no server-rendered application pages |
+| **API** | A Django JSON API under `/api/`, with one module per capability; session + CSRF for the SPA and Bearer PATs for automation; no DRF and no server-rendered application pages |
+| **Automation** | A dependency-free MCP stdio server (`scripts/localca_mcp.py`) exposes the certificate API to AI agents through a PAT |
 | **i18n** | Per-namespace JSON catalogues in the SPA, Django gettext on the server; both compiled into the image |
 
 ## Architecture
@@ -202,6 +205,8 @@ and CI.
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Reverse proxy, image publishing, time zones and required settings |
 | [docs/UPGRADING.md](docs/UPGRADING.md) | Upgrading from the single-container layout: volume paths and permissions |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Architecture, local setup, translations and tests |
+| [docs/API.md](docs/API.md) | Personal access tokens, API endpoints and curl examples |
+| [docs/MCP.md](docs/MCP.md) | MCP server setup, tools and AI-agent usage |
 | [DECISIONS.md](DECISIONS.md) | Design decisions and trade-offs |
 | [SECURITY_AUDIT.md](SECURITY_AUDIT.md) | Threat model and security audit |
 | [TRAEFIK_DEPLOYMENT.md](TRAEFIK_DEPLOYMENT.md) | Reverse-proxy deployment |
