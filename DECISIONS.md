@@ -7,6 +7,20 @@
 
 ---
 
+## 2026-11-16 · 自动升级与迁移纪律
+
+| # | 决策 | 谁定的 | 理由 / 怎么改 |
+| --- | --- | --- | --- |
+| D66 | 启动入口统一为 `manage.py upgrade`：检测 pending → 写 SQLite 在线备份 → `migrate --noinput`；没有 pending 时完全不写备份、不碰数据库 | 用户明确要求（"migration 逻辑内置到应用中，用户无脑升级"） | `start.sh` 与 Traefik compose 不再直接调 `migrate`。备份用 SQLite 的 `backup()`（不是文件复制），写到 `localca_project/db/backups/db-<UTC>.sqlite3`，默认保留 5 份，只有成功后才清理旧份 |
+| D67 | 备份失败就**拒绝迁移**；迁移失败则保留升级前备份并以非零退出让容器停住 | agent 默认 | 没有备份的自动迁移等于把回滚成本转嫁给用户。宁可容器起不来并给出备份路径，也不在不可恢复的数据库上继续跑 |
+| D68 | CI 增加 `makemigrations --check --dry-run`，并修正 Django CI 的测试目标为 `manage.py test LocalCA` | agent 默认 | 原 CI 从仓库根跑裸 `manage.py test`，实际发现 0 个测试并静默通过；两个门禁一起补上后，"模型变了但没 migration" 和 "测试根本没跑" 都会让 PR 失败 |
+| D69 | 迁移纪律写进 `AGENTS.md` 与 `docs/MIGRATIONS.md`：同一个改动必须带 migration；已发布 migration 不改；数据迁移用幂等 `RunPython`；先加列/表再删；环境变量改名保留旧名 fallback；卷路径不得无迁移变更 | 用户明确要求（"后续所有变更都增加 migration 能力"） | 这是面向未来所有贡献者的规则，不是一次性改动。新增文档还给出备份布局、恢复步骤、CI 命令和失败处理 |
+| D70 | 自动备份目前只覆盖 SQLite；非 SQLite 后端只提示"请自行做原生备份"，不假装已保护 | agent 默认 | 项目当前唯一支持的数据库是 SQLite；为未来的 PostgreSQL 等写一个不存在的自动备份路径会制造虚假安全感。真引入新后端时必须同时补它的备份方案 |
+
+> 验收：`manage.py test LocalCA` 全绿（新增 `tests_upgrade` 6 项：无 pending 幂等、keep 校验、在线备份内容/权限、备份保留、pending 时先备份再迁移、备份失败拒绝迁移）；`makemigrations --check` 无变更；`manage.py upgrade` 在当前库上为 no-op；`start.sh` / `docker-compose-traefik.yml` 已改用 upgrade。
+
+---
+
 ## 2026-10-17 · 项目洗澡，以及 api 包
 
 | # | 决策 | 谁定的 | 理由 / 怎么改 |

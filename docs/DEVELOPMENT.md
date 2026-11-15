@@ -62,8 +62,8 @@ export DJANGO_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsa
 export DJANGO_DEBUG=true
 export DJANGO_ALLOWED_HOSTS=127.0.0.1,localhost
 
-# Migrations are committed, so apply them rather than regenerating.
-python manage.py migrate
+# Migrations are committed; upgrade applies them (and backs up pending ones).
+python manage.py upgrade
 python manage.py runserver 8000
 ```
 
@@ -79,6 +79,23 @@ pnpm dev            # http://localhost:5173, proxies /api to :8000
 To build the bundle that Django serves, run `pnpm build` from `frontend/`: it
 writes `frontend/dist`, which `settings.py` picks up automatically. Without a
 build, `/` returns a short placeholder page explaining how to make one.
+
+## Migrations and upgrades
+
+Schema history is committed Django migrations; the container start script applies
+it through `manage.py upgrade`, which takes a timestamped SQLite backup before
+the first pending migration. Development uses the same command. A change that
+touches a model or stored data ships its migration in the same pull request, and
+CI fails a model change without one (`makemigrations --check`).
+
+```bash
+python manage.py makemigrations LocalCA   # generate; review before committing
+python manage.py upgrade                  # apply, with a backup when pending
+```
+
+Add data changes as a `RunPython` operation in its own migration; make it
+idempotent. Never edit a migration that has been released. The compatibility
+rules, backup layout and restore steps are in [MIGRATIONS.md](MIGRATIONS.md).
 
 ## Translations
 

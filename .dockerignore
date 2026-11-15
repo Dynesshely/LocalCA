@@ -20,7 +20,7 @@ __pycache__
 *.pyc
 
 # NOTE: migrations/ must NOT be excluded -- they are committed and are the
-# schema contract the container applies with `manage.py migrate`.
+# schema contract the container applies with `manage.py upgrade`.
 
 ENV
 .env

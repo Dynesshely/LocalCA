@@ -37,4 +37,9 @@ jobs:
         pip install -r requirements-dev.txt
     - name: Run Custom Tests
       run: |
-        python localca_project/manage.py test
+        # Run the LocalCA suite explicitly. A bare `manage.py test` from the
+        # repository root discovers zero tests and silently passes.
+        python localca_project/manage.py test LocalCA
+    - name: Check for missing migrations
+      run: |
+        python localca_project/manage.py makemigrations --check --dry-run
