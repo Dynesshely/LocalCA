@@ -6,10 +6,12 @@ access token** (PAT) in an `Authorization: Bearer` header.
 
 A PAT belongs to one account and has exactly that account's permissions. A staff
 PAT can manage (read, revoke and delete) every certificate; an ordinary user's
-PAT can only manage that user's certificates. Signing and private-key export
-remain owner-only even for staff, because a key is wrapped with its owner's
-keystore credential. Tokens do not have separate scopes, and they do not expire:
-revoke one explicitly when it is no longer needed.
+PAT can only manage that user's certificates. Signing is always owner-only.
+Exporting a private key is also owner-only for **wrapped** keys, because the key
+is wrapped with its owner's keystore credential; a legacy cleartext key (a row
+that predates the keystore) is the exception and staff can export it. Tokens do
+not have separate scopes, and they do not expire: revoke one explicitly when it
+is no longer needed.
 
 ## Creating a token
 
@@ -80,7 +82,7 @@ without requiring another endpoint.
 | `POST` | `/api/certificates/leaf/<id>/renew/` | Re-issue a leaf with edited SANs |
 | `POST` | `/api/certificates/<kind>/<id>/revoke/` | Revoke a root, intermediate or leaf |
 | `POST` | `/api/certificates/<kind>/<id>/delete/` | Delete it and everything it signed |
-| `GET` | `/api/download/<serial>/<format>/` | Download certificate or key material |
+| `GET`/`POST` | `/api/download/<serial>/<format>/` | Download certificate or key material; POST when a body is required |
 | `GET` | `/api/meta/` | Download formats, revocation reasons, validity bounds |
 
 `kind` is one of `root`, `intermediate`, `leaf`.
@@ -153,11 +155,17 @@ Revocation reasons: `unspecified`, `key_compromise`, `ca_compromise`,
 
 ## Downloads
 
-`GET /api/download/<serial>/<format>/` serves the formats listed by
-`/api/meta/` (`download_formats`). Public formats need no session or token;
-private-key formats require the owning account, an open keystore credential, and
-(for unprotected keys) an explicit confirmation. A PAT may download its owner's
-private-key formats, because it is the owner for API purposes.
+`/api/download/<serial>/<format>/` serves the formats listed by `/api/meta/`
+(`download_formats`). Public formats are a plain `GET` and need no session or
+token; private-key formats require the owning account, an open keystore
+credential, and (for unprotected keys) an explicit confirmation.
+
+The formats that take an export password (`pkcs12`, `key`) or a confirmation
+(`key-plain`, `pair-zip`, `chain-key-zip`) must be sent as a **POST** with a JSON
+body, e.g. `{"password": "..."}` or `{"confirm": true}`. The API reads these
+values from the body, not from a query string; `GET` with `?confirm=true` is
+rejected. A PAT may download its owner's private-key formats, because it is the
+owner for API purposes.
 
 ## Errors
 

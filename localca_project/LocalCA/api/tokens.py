@@ -2,8 +2,8 @@
 Personal access tokens: list, create and revoke.
 
 Token management is intentionally session-only. A PAT can act as its owner on
-the certificate API, but it cannot mint another PAT or revoke its siblings: a
-leaked token must not be able to extend its own lifetime or create a cleaner
+the JSON API, but it cannot mint another PAT or revoke its siblings: a leaked
+token must not be able to extend its own lifetime or create a cleaner
 replacement.
 """
 

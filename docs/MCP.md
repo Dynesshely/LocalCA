@@ -71,7 +71,7 @@ Supported protocol versions are `2024-11-05` (the default), `2025-03-26` and `20
 
 ## Tools
 
-Every tool answers through `tools/call` with `content: [{"type": "text", "text": "<pretty JSON>"}]`. `isError` is set for HTTP failures and invalid arguments. The text is the LocalCA API's response body (pretty-printed), so the API's `ok`/`errors`/`field_errors` shape is what a client sees.
+Every tool answers through `tools/call` with `content: [{"type": "text", "text": "<pretty JSON>"}]`. `isError` is set for HTTP failures and invalid arguments. The text is JSON, but not always the raw API body: `list_certificates` and `get_certificate` return the tool's own `{ok, count, certificates}` / `{ok, certificate}` wrapper, the other tools usually pass the API body through, and an HTTP failure is wrapped as `{ok: false, error, status, body, request, hint?}`. Where the API body is passed through, its `ok`/`errors`/`field_errors` shape is what the client sees.
 
 | Tool | Inputs | LocalCA endpoint |
 | --- | --- | --- |
@@ -91,7 +91,7 @@ Notes:
 * `san` is an array of DNS names and/or IP addresses. The server joins it with newlines for the API, which accepts commas and newlines, de-duplicates entries and prepends the common name. A leaf can therefore be issued with only its common name by passing an empty array.
 * `reason` is one of `unspecified`, `key_compromise`, `ca_compromise`, `affiliation_changed`, `superseded`, `cessation_of_operation`, `certificate_hold` or `privilege_withdrawn`.
 * `revoke_certificate` sends `type` and `id` in the body as well as in the URL, because the API checks that the two agree; `cascade` also revokes every certificate signed by the CA.
-* `list_certificates` returns entries with `kind`, `id`, `name`, `serial_number`, dates, owner, `can_manage`, key state and revocation. Leaves also carry `sans`, `signed_by` and `renewed_by`. Private key material is never returned.
+* `list_certificates` returns entries with `kind`, `id`, `name`, `serial_number`, dates, owner, `can_manage`, key state and revocation. Intermediates and leaves also carry `signed_by`; leaves carry `sans` and `renewed_by`. Private key material is never returned.
 * Arguments are validated before any HTTP request, so a missing or mistyped argument is reported without touching the API.
 
 A successful `create_leaf_certificate` returns the API's 201 body:
@@ -178,10 +178,10 @@ A client that wants a full trace can send the same line on stdin to the server d
 | **401** `Invalid or revoked personal access token.` | Typo, revoked token, or deactivated owner | Create a new token at `/tokens`, update `LOCALCA_PAT`, restart the client. |
 | **403** `Access tokens can only be managed from a signed-in session.` | A PAT was used against `/api/tokens/` | Manage tokens in the UI or with a session; the MCP server has no token tools. |
 | **403** `You do not have permission ...` / `You can only renew a certificate you own.` | The token's user is not the owner and is not staff | Use the owner's token or a staff token; check `can_manage` first. |
-| **404** `That certificate does not exist.` | Wrong kind or id | `list_certificates` or `get_certificate` first; kind and id must both match. |
+| **404** `That certificate does not exist.` (renew) or an HTML 404 page (revoke/delete) | Wrong kind or id | `list_certificates` or `get_certificate` first; kind and id must both match. Renew returns the JSON message; revoke/delete use Django's HTML 404 response, which the tool passes through as text. |
 | **400** with `errors`/`field_errors` | Server-side validation: duplicate name, validity longer than the issuer, no SAN, unknown issuer id, ... | Read the message; it is the same text the UI would show. |
 | **409** with `vault_locked: true` | The target or issuer credential is locked | Open it on the Keystore page, then retry. See [Keystore and key operations](KEYSTORE.md). |
-| **409** `already revoked` / `already renewed` / `already in use` | State conflict | `get_certificate` to confirm the current state; renew the replacement instead, or choose another name. |
+| **409** `already revoked` / `already renewed` | State conflict | `get_certificate` to confirm the current state; renew the replacement instead. A duplicate certificate name is a **400** validation error, not a 409. |
 | **409** `No keystore credential exists yet` | The account has no credential | Create one on the Keystore page, then retry. |
 | `Could not reach LocalCA at ...` | Wrong `LOCALCA_URL`, server down, or a reverse-proxy path prefix omitted | Check the URL includes any prefix, and test it with `curl` (below). Requests time out after 30 seconds. |
 | TLS certificate verification fails | The instance's certificate is issued by an internal CA the host does not trust | Add that CA to the host trust store. The server has no insecure mode. |
@@ -193,11 +193,12 @@ Check connectivity and the token with the API directly — a valid token returns
 curl -sS -H "Authorization: Bearer $LOCALCA_PAT" "$LOCALCA_URL/api/session/"
 ```
 
-### 401, 403 and 409 in detail
+### 401, 403, 404 and 409 in detail
 
 * **401** comes from the PAT middleware before any view runs: the token is unknown, revoked, or its owner is inactive. The response carries `WWW-Authenticate: Bearer`. It is not a vault problem and no UI unlock will fix it.
 * **403** with the token-management message means the request hit `/api/tokens/` with a PAT; that endpoint is session-only on purpose. Any other 403 is a certificate permission decision (owner or staff).
-* **409** is a state conflict. `vault_locked: true` means "unlock a credential first"; the other 409s mean the certificate is already revoked, already has a replacement, or the name is taken.
+* **404** has two shapes: renew answers `{"ok": false, "errors": [...]}`, while revoke/delete use Django's `get_object_or_404` and return an HTML page. The MCP tool passes either body through; do not assume JSON for a missing certificate in those two tools.
+* **409** is a state conflict. `vault_locked: true` means "unlock a credential first"; the other 409s mean the certificate is already revoked or already has a replacement. A duplicate certificate name is a 400, not a 409.
 
 ## Manual protocol test
 
